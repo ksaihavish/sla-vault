@@ -1,209 +1,499 @@
 import os
 import subprocess
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
-def create_video():
-    width, height = 1920, 1080
-    fps = 30
-    frames_dir = "video_frames"
+# ── DESIGN TOKENS ──────────────────────────────────────────
+BG         = (241, 245, 249)   # #f1f5f9
+CARD       = (255, 255, 255)
+BORDER     = (226, 232, 240)
+BORDER_STR = (203, 213, 225)
+NAVY       = (15, 23, 42)
+NAVY2      = (30, 41, 59)
+SLATE      = (100, 116, 139)
+TEXT2      = (51, 65, 85)
+
+GREEN_BG   = (220, 252, 231)
+GREEN_FG   = (21, 128, 61)
+GREEN_BD   = (134, 239, 172)
+
+RED_BG     = (254, 226, 226)
+RED_FG     = (185, 28, 28)
+RED_BD     = (252, 165, 165)
+
+AMBER_BG   = (254, 243, 199)
+AMBER_FG   = (180, 83, 9)
+AMBER_BD   = (252, 211, 77)
+
+BLUE_BG    = (219, 234, 254)
+BLUE_FG    = (29, 78, 216)
+
+CODE_BG    = (15, 23, 42)
+CODE_FG    = (148, 163, 184)
+CODE_HL    = (226, 232, 240)
+CODE_BLUE  = (96, 165, 250)
+
+W, H = 1920, 1080
+FPS  = 30
+
+def load_font(path, size, fallback_size=None):
+    from PIL import ImageFont
+    try:
+        return ImageFont.truetype(path, size)
+    except Exception:
+        try:
+            alt_paths = [
+                "C:/Windows/Fonts/arial.ttf",
+                "C:/Windows/Fonts/arialbd.ttf",
+                "C:/Windows/Fonts/calibri.ttf",
+                "C:/Windows/Fonts/segoeui.ttf",
+            ]
+            for ap in alt_paths:
+                try:
+                    return ImageFont.truetype(ap, fallback_size or size)
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        return ImageFont.load_default()
+
+from PIL import ImageFont
+
+FONT_TITLE    = load_font("C:/Windows/Fonts/arialbd.ttf",  52)
+FONT_H2       = load_font("C:/Windows/Fonts/arialbd.ttf",  36)
+FONT_H3       = load_font("C:/Windows/Fonts/arialbd.ttf",  26)
+FONT_BODY     = load_font("C:/Windows/Fonts/arial.ttf",    22)
+FONT_SMALL    = load_font("C:/Windows/Fonts/arial.ttf",    18)
+FONT_MONO     = load_font("C:/Windows/Fonts/consola.ttf",  20)
+FONT_MONO_SM  = load_font("C:/Windows/Fonts/consola.ttf",  16)
+FONT_BADGE    = load_font("C:/Windows/Fonts/arialbd.ttf",  16)
+
+def roundrect(draw, x1, y1, x2, y2, r, fill=None, outline=None, width=1):
+    draw.rounded_rectangle([x1, y1, x2, y2], radius=r, fill=fill, outline=outline, width=width)
+
+def topbar(draw, step_label):
+    # Bar background
+    draw.rectangle([0, 0, W, 72], fill=CARD, outline=BORDER)
+    draw.line([0, 72, W, 72], fill=BORDER, width=2)
+    # SV logo
+    roundrect(draw, 28, 18, 64, 54, 4, fill=NAVY)
+    draw.text((38, 22), "SV", fill=CARD, font=FONT_H3)
+    # Brand
+    draw.text((78, 18), "SLA-Vault", fill=NAVY, font=FONT_H3)
+    draw.text((215, 23), "FinTech Performance Bond Protocol", fill=SLATE, font=FONT_SMALL)
+    draw.line([210, 28, 210, 52], fill=BORDER, width=1)
+    # Step pill
+    roundrect(draw, W-520, 22, W-28, 52, 20, fill=GREEN_BG, outline=GREEN_BD, width=1)
+    draw.ellipse([W-508, 34, W-494, 48], fill=GREEN_FG)
+    draw.text((W-488, 26), step_label, fill=GREEN_FG, font=FONT_BADGE)
+
+def stat_card(draw, x, y, w, h, title, value, sub, val_color=NAVY):
+    roundrect(draw, x, y, x+w, y+h, 8, fill=CARD, outline=BORDER, width=1)
+    draw.text((x+18, y+16), title.upper(), fill=SLATE, font=FONT_SMALL)
+    draw.text((x+18, y+44), value, fill=val_color, font=FONT_H2)
+    draw.text((x+18, y+92), sub, fill=SLATE, font=FONT_SMALL)
+
+def badge(draw, x, y, text, bg, fg, bd):
+    w_text = draw.textlength(text, font=FONT_BADGE)
+    rx1, rx2 = x, x + w_text + 20
+    roundrect(draw, rx1, y-4, rx2, y+22, 4, fill=bg, outline=bd, width=1)
+    draw.text((rx1+10, y), text, fill=fg, font=FONT_BADGE)
+    return rx2
+
+def panel(draw, x, y, w, h, title, badge_text):
+    roundrect(draw, x, y, x+w, y+h, 8, fill=CARD, outline=BORDER, width=1)
+    draw.rectangle([x+1, y+1, x+w-1, y+52], fill=(250, 251, 252))
+    roundrect(draw, x, y, x+w, y+52, 8, fill=(250, 251, 252), outline=BORDER, width=1)
+    draw.line([x+1, y+52, x+w-1, y+52], fill=BORDER, width=1)
+    draw.text((x+18, y+16), title, fill=NAVY, font=FONT_H3)
+    bw = draw.textlength(badge_text, font=FONT_BADGE) + 20
+    roundrect(draw, x+w-bw-16, y+12, x+w-16, y+40, 4, fill=BORDER, outline=BORDER_STR, width=1)
+    draw.text((x+w-bw-6, y+16), badge_text, fill=SLATE, font=FONT_BADGE)
+
+def code_block(draw, x, y, w, h, lines):
+    roundrect(draw, x, y, x+w, y+h, 6, fill=CODE_BG)
+    for i, (color, text) in enumerate(lines):
+        draw.text((x+18, y+14 + i*26), text, fill=color, font=FONT_MONO)
+
+def audit_line(draw, x, y, time_str, text):
+    draw.text((x, y), f"[{time_str}]", fill=SLATE, font=FONT_MONO_SM)
+    draw.text((x+110, y), text, fill=CODE_FG, font=FONT_MONO_SM)
+
+# ── FRAME GENERATORS ───────────────────────────────────────
+
+def make_title(draw, progress):
+    draw.rectangle([0, 0, W, H], fill=BG)
+    topbar(draw, "Demo Engine: Live & Active")
+
+    # Main card
+    cx, cy, cw, ch = 200, 100, 1520, 920
+    roundrect(draw, cx, cy, cx+cw, cy+ch, 12, fill=CARD, outline=BORDER, width=2)
+
+    # Navy accent top strip
+    roundrect(draw, cx, cy, cx+cw, cy+10, 12, fill=NAVY)
+    draw.rectangle([cx, cy+6, cx+cw, cy+10], fill=NAVY)
+
+    # Big logo area
+    roundrect(draw, cx+60, cy+50, cx+140, cy+130, 6, fill=NAVY)
+    draw.text((cx+76, cy+62), "SV", fill=CARD, font=FONT_TITLE)
+
+    draw.text((cx+160, cy+55), "SLA-Vault", fill=NAVY, font=FONT_TITLE)
+    draw.text((cx+160, cy+120), "A Blockchain-Based SaaS Performance Bond &", fill=SLATE, font=FONT_H3)
+    draw.text((cx+160, cy+158), "Dispute-Aware Penalty Settlement Platform", fill=SLATE, font=FONT_H3)
+
+    draw.line([cx+60, cy+210, cx+cw-60, cy+210], fill=BORDER, width=2)
+
+    draw.text((cx+60, cy+236), "Course:     CS2614 Fundamentals of Blockchain — Mini Project", fill=TEXT2, font=FONT_BODY)
+    draw.text((cx+60, cy+272), "Institute:  School of Computer Science & Engineering, RV University, Bengaluru", fill=TEXT2, font=FONT_BODY)
+    draw.text((cx+60, cy+308), "Student:    Kukkadapu Sai Havish   (USN: 1RUA24CSE0212)", fill=NAVY, font=FONT_BODY)
+
+    draw.line([cx+60, cy+360], fill=BORDER, width=1)
+
+    # Highlights box
+    roundrect(draw, cx+60, cy+390, cx+cw-60, cy+840, 8, fill=BG, outline=BORDER, width=1)
+    draw.text((cx+86, cy+414), "Platform Highlights", fill=NAVY, font=FONT_H3)
+
+    highlights = [
+        (GREEN_FG, "Escrow-Backed Performance Bond — Providers lock collateral BEFORE creating service agreements."),
+        (GREEN_FG, "Integer Basis-Point Precision — Uptime tracked as basis points (9900 BP = 99.00%) to avoid EVM rounding."),
+        (GREEN_FG, "60-Second Dispute Challenge Window — Providers can contest false-positive telemetry before funds move."),
+        (GREEN_FG, "Autonomous Liquidation — On verified breach, the smart contract pays the customer automatically."),
+        (GREEN_FG, "Withdrawal Safeguard — Provider cannot drain collateral below the minimum reserve for active SLAs."),
+    ]
+    for i, (col, text) in enumerate(highlights):
+        draw.text((cx+86, cy+466 + i*70), "✓", fill=col, font=FONT_H3)
+        draw.text((cx+126, cy+470 + i*70), text, fill=TEXT2, font=FONT_BODY)
+
+def make_architecture(draw):
+    draw.rectangle([0, 0, W, H], fill=BG)
+    topbar(draw, "1 of 5 — Protocol Architecture")
+    draw.text((W//2, 100), "SLA-Vault System Architecture", fill=NAVY, font=FONT_TITLE, anchor="mm")
+    draw.text((W//2, 145), "Three-layer decentralized application: Actors → Web Dashboard → Smart Contract", fill=SLATE, font=FONT_BODY, anchor="mm")
+
+    # Layer 1: Actors
+    for i, (actor, desc) in enumerate([
+        ("SaaS Provider\n(CloudCorp)", "Locks bond\nCreates SLAs\nChallenges reports"),
+        ("Oracle Monitor\n(Off-Chain Agent)", "Pings endpoints\nComputes uptime BP\nSubmits signed reports"),
+        ("Enterprise Customer\n(FinBank)", "Holds SLA policy\nReceives instant payout\nZero claim filing"),
+    ]):
+        x = 120 + i * 600
+        roundrect(draw, x, 185, x+500, 380, 8, fill=CARD, outline=BORDER_STR, width=2)
+        draw.text((x+250, 238), actor, fill=NAVY, font=FONT_H3, anchor="mm")
+        draw.line([x+40, 262, x+460, 262], fill=BORDER, width=1)
+        draw.text((x+250, 310), desc, fill=SLATE, font=FONT_BODY, anchor="mm")
+
+    draw.text((W//2, 420), "↓  Web3 / Ethers.js  ↓", fill=SLATE, font=FONT_BODY, anchor="mm")
+
+    # Layer 2: Dashboard
+    roundrect(draw, 200, 445, W-200, 525, 8, fill=BLUE_BG, outline=BLUE_FG, width=2)
+    draw.text((W//2, 485), "Web Dashboard  (HTML / CSS / Vanilla JS / Ethers.js v6 — Runs fully offline)", fill=BLUE_FG, font=FONT_H3, anchor="mm")
+
+    draw.text((W//2, 560), "↓  On-Chain Function Calls  ↓", fill=SLATE, font=FONT_BODY, anchor="mm")
+
+    # Layer 3: Smart contract
+    roundrect(draw, 80, 585, W-80, 1010, 8, fill=CARD, outline=NAVY, width=3)
+    draw.text((W//2, 630), "Smart Contract: SLAVault.sol  (Solidity v0.8.20 — Ethereum / EVM)", fill=NAVY, font=FONT_H3, anchor="mm")
+    draw.line([120, 650, W-120, 650], fill=BORDER, width=1)
+
+    modules = [
+        (GREEN_BG, GREEN_FG, GREEN_BD, "1. Collateral Escrow",  "depositCollateral()\nwithdrawCollateral()\nSolvency reserve check"),
+        (BLUE_BG,  BLUE_FG,  (147,197,253), "2. SLA Registry",  "createAgreement()\nBasis-point uptime\nPenalty terms"),
+        (AMBER_BG, AMBER_FG, AMBER_BD, "3. Dispute Engine",  "challengeReport()\nresolveDispute()\n60s challenge window"),
+        (RED_BG,   RED_FG,   RED_BD,   "4. Settlement",      "executeSettlement()\nChecks-Effects-Interactions\nAutomatic payout"),
+    ]
+    for i, (bg, fg, bd, title, body) in enumerate(modules):
+        x = 110 + i * 430
+        roundrect(draw, x, 668, x+400, 990, 8, fill=bg, outline=bd, width=2)
+        draw.text((x+200, 710), title, fill=fg, font=FONT_H3, anchor="mm")
+        draw.line([x+20, 730, x+380, 730], fill=bd, width=1)
+        draw.text((x+200, 830), body, fill=NAVY, font=FONT_BODY, anchor="mm")
+
+def make_deposit_sla(draw):
+    draw.rectangle([0, 0, W, H], fill=BG)
+    topbar(draw, "2 of 5 — Provider Vault & SLA Creation")
+
+    # Vault panel
+    panel(draw, 60, 90, 860, 520, "Provider Performance Bond Vault", "Collateral Layer")
+    roundrect(draw, 90, 160, 890, 290, 8, fill=BG, outline=BORDER, width=1)
+    draw.text((110, 172), "CURRENT ESCROW BALANCE", fill=SLATE, font=FONT_SMALL)
+    draw.text((110, 202), "10.00 ETH", fill=NAVY, font=FONT_TITLE)
+    badge(draw, 110, 276, "Sufficient Collateral", GREEN_BG, GREEN_FG, GREEN_BD)
+    draw.text((330, 277), "Reserve: 1.25 ETH required | Buffer: 800%", fill=SLATE, font=FONT_SMALL)
+
+    draw.text((90, 315), "Key Principle:", fill=NAVY, font=FONT_H3)
+    draw.text((90, 360), "Providers must lock collateral BEFORE creating SLAs.", fill=TEXT2, font=FONT_BODY)
+    draw.text((90, 396), "The smart contract verifies providerCollateral ≥ penaltyPerBreach.", fill=TEXT2, font=FONT_BODY)
+    draw.text((90, 432), "Withdrawals are blocked below the minimum active SLA reserve.", fill=TEXT2, font=FONT_BODY)
+
+    code_block(draw, 90, 478, 810, 110, [
+        (CODE_FG,   "function depositCollateral() external payable {"),
+        (CODE_HL,   "  providerCollateral[msg.sender] += msg.value;"),
+        (CODE_BLUE, "  emit CollateralDeposited(msg.sender, msg.value);"),
+        (CODE_FG,   "}"),
+    ])
+
+    # SLA Registration Panel
+    panel(draw, 960, 90, 900, 520, "Register New SLA Agreement", "Contract Layer")
+    draw.text((982, 165), "Agreement successfully deployed on-chain:", fill=SLATE, font=FONT_BODY)
+
+    fields = [
+        ("SLA ID",          "#1"),
+        ("Customer",         "0x94B...FinBank (Enterprise Tier 1)"),
+        ("Target Uptime",    "99.00%  (9900 Basis Points on EVM)"),
+        ("Penalty / Breach", "0.50 ETH  (deducted automatically)"),
+        ("Status",           "Active — Fully Collateral-Backed"),
+    ]
+    for i, (label, val) in enumerate(fields):
+        y = 215 + i*62
+        draw.text((982, y), f"{label}:", fill=SLATE, font=FONT_BODY)
+        draw.text((1200, y), val, fill=NAVY, font=FONT_H3)
+        draw.line([982, y+42, 1830, y+42], fill=BORDER, width=1)
+
+    # SLA table
+    panel(draw, 60, 635, 1800, 380, "Active Service Level Agreements — On-Chain Registry", "2 Active")
+    headers = ["SLA ID", "Provider", "Enterprise Customer", "Target Uptime", "Penalty / Breach", "Total Paid", "Status"]
+    col_x   = [90, 190, 440, 810, 1050, 1290, 1510]
+    for i, h in enumerate(headers):
+        draw.text((col_x[i], 694), h.upper(), fill=SLATE, font=FONT_SMALL)
+    draw.line([80, 720, 1840, 720], fill=BORDER, width=2)
+
+    rows = [
+        ("#1", "0x71C840...Provider", "0x94B...FinBank (Tier 1)",   "99.00% (9900 BP)", "0.50 ETH", "0.50 ETH", "ACTIVE"),
+        ("#2", "0x71C840...Provider", "0x53E...HealthCare Corp",    "99.50% (9950 BP)", "0.75 ETH", "0.00 ETH", "ACTIVE"),
+    ]
+    for r, row in enumerate(rows):
+        y = 736 + r * 56
+        for i, val in enumerate(row):
+            draw.text((col_x[i], y), val, fill=NAVY if i != 6 else TEXT2, font=FONT_BODY)
+        if r == 0:
+            badge(draw, col_x[6], 736, "ACTIVE", GREEN_BG, GREEN_FG, GREEN_BD)
+        else:
+            badge(draw, col_x[6], 792, "ACTIVE", GREEN_BG, GREEN_FG, GREEN_BD)
+        draw.line([80, y+46, 1840, y+46], fill=BORDER, width=1)
+
+def make_breach(draw, elapsed_secs):
+    draw.rectangle([0, 0, W, H], fill=BG)
+    topbar(draw, "3 of 5 — Telemetry Breach & 60s Challenge Window")
+
+    # Oracle panel
+    panel(draw, 60, 90, 860, 530, "Independent Telemetry & Oracle Feed", "Oracle Layer")
+    draw.text((90, 165), "Oracle submitted signed performance report:", fill=SLATE, font=FONT_BODY)
+
+    oracle_fields = [
+        ("Target SLA",       "#1 — FinBank  |  99.00% required"),
+        ("Observed Uptime",  "98.20%  (9820 Basis Points)"),
+        ("Average Latency",  "380 ms"),
+        ("Preset Used",      "Minor Outage  ⚠"),
+        ("Report Timestamp", "14:12:33 UTC"),
+    ]
+    for i, (k, v) in enumerate(oracle_fields):
+        y = 215 + i * 60
+        draw.text((90, y), f"{k}:", fill=SLATE, font=FONT_BODY)
+        draw.text((310, y), v, fill=NAVY, font=FONT_H3)
+        draw.line([90, y+42, 890, y+42], fill=BORDER, width=1)
+
+    code_block(draw, 90, 520, 810, 82, [
+        (CODE_FG,  "submitTelemetry(slaId:1, uptimeBP:9820, ms:380)"),
+        (CODE_HL,  "// 9820 < 9900  →  BREACH DETECTED"),
+        (CODE_BLUE,"// Challenge window: block.timestamp + 60"),
+    ])
+
+    # Dispute & Settlement Panel
+    panel(draw, 960, 90, 900, 530, "Dispute Window & Automated Settlement", "Arbitration Layer")
+
+    # Breach alert box
+    roundrect(draw, 982, 162, 1840, 360, 8, fill=RED_BG, outline=RED_BD, width=2)
+    badge(draw, 992, 178, "BREACHED (98.20%)", RED_BG, RED_FG, RED_BD)
+    draw.text((992, 226), "SLA #1 — 0x94B...FinBank (Enterprise Tier 1)", fill=RED_FG, font=FONT_H3)
+    draw.text((992, 272), "Observed: 98.20%  <  Target: 99.00%  |  Latency: 380ms", fill=TEXT2, font=FONT_BODY)
+    draw.text((992, 308), "Penalty due: 0.50 ETH  (automatically settled if unchallenged)", fill=TEXT2, font=FONT_BODY)
+
+    remaining = max(0, 60 - int(elapsed_secs))
+    timer_col = AMBER_FG if remaining > 0 else GREEN_FG
+    timer_txt = f"Challenge window closes in: {remaining}s" if remaining > 0 else "Challenge window EXPIRED — settlement ready."
+    roundrect(draw, 982, 374, 1840, 440, 8, fill=AMBER_BG, outline=AMBER_BD, width=1)
+    draw.text((1002, 392), timer_txt, fill=timer_col, font=FONT_H3)
+
+    draw.text((982, 460), "Fairness Guarantee:", fill=NAVY, font=FONT_H3)
+    draw.text((982, 502), "Funds are NOT immediately seized. The provider has 60 seconds to challenge", fill=TEXT2, font=FONT_BODY)
+    draw.text((982, 536), "erroneous or false-positive telemetry (e.g. upstream CDN anomaly).", fill=TEXT2, font=FONT_BODY)
+
+    # Audit log
+    panel(draw, 60, 640, 1800, 360, "Cryptographic Event Ledger & Audit Trail", "Immutable Logs")
+    roundrect(draw, 80, 698, 1840, 980, 8, fill=CODE_BG)
+    logs = [
+        ("14:05:22", "CollateralDeposited: +10.00 ETH locked in escrow vault   Tx: 0x8a9f...32b"),
+        ("14:07:45", "SLACreated: SLA #1 deployed — FinBank, 99.00% target, 0.50 ETH penalty   Tx: 0x2d3f...11c"),
+        ("14:09:12", "SLACreated: SLA #2 deployed — HealthCare Corp, 99.50% target   Tx: 0x7b8e...92a"),
+        ("14:12:33", "TelemetrySubmitted [BREACH]: SLA #1 — 98.20% < 99.00%. Challenge window opened (60s)   Tx: 0x3c1a...89f"),
+    ]
+    for i, (t, msg) in enumerate(logs):
+        audit_line(draw, 100, 714 + i*56, t, msg)
+
+def make_settlement(draw):
+    draw.rectangle([0, 0, W, H], fill=BG)
+    topbar(draw, "4 of 5 — Automated Liquidation & Customer Payout")
+
+    # Left panel: settlement result
+    panel(draw, 60, 90, 900, 540, "Settlement Execution: Penalty Liquidated", "Settlement Layer")
+    roundrect(draw, 90, 162, 940, 610, 8, fill=GREEN_BG, outline=GREEN_BD, width=2)
+    draw.text((500, 220), "Payout Successful", fill=GREEN_FG, font=FONT_TITLE, anchor="mm")
+
+    draw.text((110, 280), "Provider collateral (before):", fill=TEXT2, font=FONT_BODY)
+    draw.text((110, 316), "Penalty deducted:", fill=TEXT2, font=FONT_BODY)
+    draw.text((110, 352), "Provider collateral (after):", fill=GREEN_FG, font=FONT_H3)
+    draw.text((110, 402), "Customer received:", fill=GREEN_FG, font=FONT_H3)
+
+    draw.text((600, 280), "10.00 ETH", fill=NAVY, font=FONT_BODY)
+    draw.text((600, 316), "- 0.50 ETH", fill=RED_FG, font=FONT_H3)
+    draw.text([90, 350, 930, 352], fill=GREEN_BD)
+    draw.text((600, 352), "9.50 ETH", fill=GREEN_FG, font=FONT_TITLE)
+    draw.text((600, 402), "+ 0.50 ETH  →  0x94B...FinBank", fill=GREEN_FG, font=FONT_H3)
+
+    draw.line([90, 450, 930, 450], fill=GREEN_BD, width=1)
+    draw.text((110, 466), "Security: Checks-Effects-Interactions pattern enforced.", fill=TEXT2, font=FONT_BODY)
+    draw.text((110, 502), "  Balance debited BEFORE external transfer call.", fill=TEXT2, font=FONT_BODY)
+    draw.text((110, 538), "  Reentrancy attack impossible.", fill=TEXT2, font=FONT_BODY)
+
+    # Right panel: code trace
+    panel(draw, 980, 90, 900, 540, "EVM Transaction Receipt", "On-Chain Proof")
+    code_block(draw, 1010, 162, 840, 468, [
+        (CODE_FG,   "[executeSettlement(slaId: 1)]"),
+        ((85,170,85), ""),
+        (CODE_FG,   "// 1. CHECK"),
+        (CODE_HL,   "require(status == Breached)    ✓"),
+        (CODE_HL,   "require(now > deadline)        ✓"),
+        (CODE_HL,   "require(collateral >= penalty) ✓"),
+        (CODE_FG,   ""),
+        (CODE_FG,   "// 2. EFFECT (state updated first)"),
+        (CODE_HL,   "collateral[provider] -= 0.50 ETH"),
+        (CODE_HL,   "sla.totalPaid        += 0.50 ETH"),
+        (CODE_HL,   "report.status = Settled"),
+        (CODE_FG,   ""),
+        (CODE_FG,   "// 3. INTERACTION (transfer last)"),
+        (CODE_BLUE, "customer.call{value: 0.50 ETH}()"),
+        (CODE_FG,   ""),
+        (CODE_BLUE, "Tx: 0x5e2b...44a  |  Gas: 38,150"),
+        (CODE_BLUE, "Status: 0x1  SUCCESS ✓"),
+    ])
+
+    # Stat cards
+    cards = [
+        ("PROVIDER COLLATERAL", "9.50 ETH", "Down 0.50 ETH from penalty"),
+        ("SETTLED PENALTIES",   "0.50 ETH", "Automated zero-touch payout"),
+        ("CUSTOMER RECEIVED",   "+0.50 ETH","Transferred to 0x94B...FinBank"),
+        ("GAS COST",            "38,150",   "Execution: executeSettlement()"),
+    ]
+    for i, (t, v, s) in enumerate(cards):
+        x = 60 + i * 470
+        stat_card(draw, x, 656, 445, 130, t, v, s, GREEN_FG if i == 2 else NAVY)
+
+    # Audit log
+    panel(draw, 60, 812, 1800, 216, "Cryptographic Event Ledger", "Immutable Logs")
+    roundrect(draw, 80, 870, 1840, 1010, 8, fill=CODE_BG)
+    audit_line(draw, 100, 885, "14:13:40", "Challenge window expired. Settlement condition met for SLA #1.")
+    audit_line(draw, 100, 913, "14:13:41", "PenaltySettled: 0.50 ETH deducted from vault. Transferred to 0x94B...FinBank  Tx: 0x5e2b...44a")
+    audit_line(draw, 100, 941, "14:13:41", "Event: PenaltySettled(slaId:1, customer:0x94B..., amount:500000000000000000 wei)")
+    audit_line(draw, 100, 969, "14:13:42", "Vault balance updated: 10.00 ETH → 9.50 ETH. Buffer 660% above reserve.")
+
+def make_conclusion(draw):
+    draw.rectangle([0, 0, W, H], fill=BG)
+    topbar(draw, "5 of 5 — Summary & Conclusion")
+
+    roundrect(draw, 200, 100, W-200, H-60, 12, fill=CARD, outline=BORDER, width=2)
+    roundrect(draw, 200, 100, W-200, 110, 12, fill=NAVY)
+    draw.rectangle([200, 106, W-200, 110], fill=NAVY)
+
+    draw.text((W//2, 168), "SLA-Vault: Project Outcomes", fill=NAVY, font=FONT_TITLE, anchor="mm")
+    draw.text((W//2, 216), "CS2614 Fundamentals of Blockchain   |   Mini Project Evaluation Summary", fill=SLATE, font=FONT_BODY, anchor="mm")
+    draw.line([260, 248, W-260, 248], fill=BORDER, width=2)
+
+    outcomes = [
+        (GREEN_FG, "✓ Smart Contract Deployed (Solidity 0.8.20) — All functions verified on Remix/Sepolia."),
+        (GREEN_FG, "✓ Pre-funded Collateral Escrow — Providers lock bonds before entering any agreement."),
+        (GREEN_FG, "✓ Basis-Point Precision (9900 BP = 99.00%) — Integer arithmetic avoids EVM rounding errors."),
+        (GREEN_FG, "✓ 60-Second Dispute Challenge Window — Fair arbitration before any liquidation occurs."),
+        (GREEN_FG, "✓ Autonomous Penalty Settlement — Zero support tickets, zero manual billing intervention."),
+        (GREEN_FG, "✓ Reentrancy-Safe — Checks-Effects-Interactions pattern enforced throughout."),
+        (GREEN_FG, "✓ Withdrawal Guard — Collateral cannot drop below active SLA reserve requirements."),
+    ]
+    for i, (col, text) in enumerate(outcomes):
+        draw.text((280, 276 + i*72), text, fill=TEXT2, font=FONT_BODY)
+        draw.ellipse([258, 288 + i*72, 272, 302 + i*72], fill=col)
+
+    roundrect(draw, 260, 800, W-260, 920, 8, fill=BG, outline=BORDER, width=1)
+    draw.text((W//2, 838), "Presenter: Kukkadapu Sai Havish  |  USN: 1RUA24CSE0212", fill=NAVY, font=FONT_H3, anchor="mm")
+    draw.text((W//2, 882), "GitHub: github.com/ksaihavish/sla-vault     Ready for Viva Voce & Q&A", fill=SLATE, font=FONT_BODY, anchor="mm")
+
+
+# ── MAIN VIDEO PIPELINE ────────────────────────────────────
+
+def generate_video():
+    frames_dir = "video_frames_v2"
     os.makedirs(frames_dir, exist_ok=True)
 
-    # Color definitions (FinTech theme)
-    bg_color = (248, 250, 252) # #F8FAFC
-    navy = (15, 23, 42)        # #0F172A
-    slate = (100, 116, 139)    # #64748B
-    border_color = (226, 232, 240)
-    emerald = (5, 150, 105)
-    amber = (217, 119, 6)
-    rose = (220, 38, 38)
-    blue = (37, 99, 235)
-
-    try:
-        font_title = ImageFont.truetype("arialbd.ttf", 52)
-        font_subtitle = ImageFont.truetype("arial.ttf", 28)
-        font_body = ImageFont.truetype("arial.ttf", 24)
-        font_mono = ImageFont.truetype("consola.ttf", 22)
-        font_badge = ImageFont.truetype("arialbd.ttf", 18)
-    except:
-        font_title = font_subtitle = font_body = font_mono = font_badge = ImageFont.load_default()
-
-    def draw_topbar(draw, step_text):
-        draw.rectangle([(0, 0), (width, 80)], fill=(255, 255, 255), outline=border_color, width=2)
-        # SV Logo
-        draw.rectangle([(40, 18), (84, 62)], fill=navy)
-        draw.text((48, 22), "SV", fill=(255, 255, 255), font=font_subtitle)
-        draw.text((105, 24), "SLA-Vault  |  FinTech Performance Bond Protocol", fill=navy, font=font_subtitle)
-        draw.text((width - 450, 26), f"Walkthrough: {step_text}", fill=emerald, font=font_body)
-
     scenes = [
-        # Scene 1: Title Card (8 seconds = 240 frames)
-        {"type": "title", "duration": 8},
-        # Scene 2: Architecture Diagram (10 seconds = 300 frames)
-        {"type": "architecture", "duration": 10},
-        # Scene 3: Provider Deposit & SLA Creation (10 seconds = 300 frames)
-        {"type": "deposit", "duration": 10},
-        # Scene 4: Oracle Telemetry Breach (12 seconds = 360 frames)
-        {"type": "breach", "duration": 12},
-        # Scene 5: Automated Settlement Payout (12 seconds = 360 frames)
-        {"type": "settlement", "duration": 12},
-        # Scene 6: Conclusion (8 seconds = 240 frames)
-        {"type": "conclusion", "duration": 8}
+        # (generator_fn, extra_args, duration_seconds)
+        ("title",        [], 8),
+        ("architecture", [], 10),
+        ("deposit_sla",  [], 10),
+        ("breach",       [], 14),   # 14s so timer ticks from 60 → 46
+        ("settlement",   [], 10),
+        ("conclusion",   [], 8),
     ]
 
     frame_idx = 0
+    total_frames = sum(s[2] * FPS for s in scenes)
+    print(f"Generating {total_frames} frames across {len(scenes)} scenes...")
 
-    print("Generating video frames...")
-
-    for scene in scenes:
-        stype = scene["type"]
-        duration = scene["duration"]
-        num_frames = duration * fps
-
+    for scene_name, args, duration in scenes:
+        num_frames = duration * FPS
         for f in range(num_frames):
-            img = Image.new("RGB", (width, height), bg_color)
+            img  = Image.new("RGB", (W, H), BG)
             draw = ImageDraw.Draw(img)
 
-            if stype == "title":
-                # Center card
-                draw.rectangle([(200, 150), (1720, 930)], fill=(255, 255, 255), outline=border_color, width=3)
-                draw.rectangle([(300, 220), (370, 290)], fill=navy)
-                draw.text((312, 230), "SV", fill=(255, 255, 255), font=font_title)
-                draw.text((400, 235), "SLA-Vault", fill=navy, font=font_title)
-                draw.text((300, 320), "A Blockchain-Based SaaS Performance Bond, Collateral Assurance,\nand Dispute-Aware Penalty Settlement Platform", fill=blue, font=font_subtitle)
+            if scene_name == "title":
+                make_title(draw, f / num_frames)
+            elif scene_name == "architecture":
+                make_architecture(draw)
+            elif scene_name == "deposit_sla":
+                make_deposit_sla(draw)
+            elif scene_name == "breach":
+                elapsed = f / FPS          # seconds elapsed within this scene
+                make_breach(draw, elapsed)
+            elif scene_name == "settlement":
+                make_settlement(draw)
+            elif scene_name == "conclusion":
+                make_conclusion(draw)
 
-                draw.line([(300, 420), (1620, 420)], fill=border_color, width=2)
-
-                draw.text((300, 460), "Academic Project: CS2614 Fundamentals of Blockchain (FinTech Minor)", fill=navy, font=font_subtitle)
-                draw.text((300, 510), "Institution: School of Computer Science & Engineering, RV University, Bengaluru", fill=slate, font=font_body)
-                draw.text((300, 560), "Student Lead: Kukkadapu Sai Havish (USN: 1RUA24CSE0212)", fill=navy, font=font_subtitle)
-
-                # Key highlights
-                draw.rectangle([(300, 640), (1620, 850)], fill=(241, 245, 249), outline=border_color, width=2)
-                draw.text((340, 665), "Key Project Highlights:", fill=navy, font=font_subtitle)
-                draw.text((340, 720), "• Escrow-Backed Performance Bond: Providers lock collateral before entering agreements", fill=slate, font=font_body)
-                draw.text((340, 760), "• Integer Precision Basis-Point Metrics (10,000 BP = 100.00% uptime)", fill=slate, font=font_body)
-                draw.text((340, 800), "• Autonomous Settlement: Parametric penalty liquidation with fair 60s dispute challenge window", fill=slate, font=font_body)
-
-            elif stype == "architecture":
-                draw_topbar(draw, "1. Protocol Architecture & Workflow")
-                if os.path.exists("fig1_system_architecture.png"):
-                    arch_img = Image.open("fig1_system_architecture.png")
-                    arch_img = arch_img.resize((1500, 900))
-                    img.paste(arch_img, (210, 120))
-
-            elif stype == "deposit":
-                draw_topbar(draw, "2. Provider Collateral Escrow & SLA Registry")
-                # Left card: Provider Vault
-                draw.rectangle([(150, 130), (900, 950)], fill=(255, 255, 255), outline=border_color, width=2)
-                draw.text((190, 170), "Provider Performance Bond Vault", fill=navy, font=font_subtitle)
-                draw.text((190, 220), "Current Escrow Balance: 10.00 ETH", fill=emerald, font=font_title)
-                draw.text((190, 300), "Status: Sufficient Collateral (Buffer: 100%)", fill=emerald, font=font_body)
-
-                draw.text((190, 380), "[Smart Contract Method Call]", fill=slate, font=font_body)
-                code_box = """function depositCollateral() external payable {
-    require(msg.value > 0, "Deposit > 0");
-    providerCollateral[msg.sender] += msg.value;
-    emit CollateralDeposited(msg.sender, msg.value);
-}"""
-                draw.text((190, 430), code_box, fill=navy, font=font_mono)
-
-                # Right card: SLA Agreement
-                draw.rectangle([(980, 130), (1770, 950)], fill=(255, 255, 255), outline=border_color, width=2)
-                draw.text((1020, 170), "Registered Service Level Agreement", fill=navy, font=font_subtitle)
-                draw.text((1020, 240), "SLA ID: #1", fill=blue, font=font_subtitle)
-                draw.text((1020, 300), "Customer: 0x94B210...FinBank (Enterprise Tier 1)", fill=navy, font=font_body)
-                draw.text((1020, 360), "Guaranteed Target Uptime: 99.00% (9900 BP)", fill=navy, font=font_body)
-                draw.text((1020, 420), "Penalty per Incident: 0.50 ETH", fill=rose, font=font_subtitle)
-                draw.text((1020, 480), "State: Active & Escrow-Backed", fill=emerald, font=font_body)
-
-            elif stype == "breach":
-                draw_topbar(draw, "3. Telemetry Breach & 60s Challenge Window")
-                # Telemetry submission
-                draw.rectangle([(150, 130), (1770, 950)], fill=(255, 255, 255), outline=rose, width=3)
-                draw.text((200, 170), "Oracle Outage Telemetry Report", fill=rose, font=font_title)
-                draw.text((200, 250), "Off-chain monitoring agent pings cloud service and records severe service degradation:", fill=slate, font=font_body)
-
-                # Big breach alert card
-                draw.rectangle([(200, 310), (1720, 520)], fill=(254, 242, 242), outline=rose, width=2)
-                draw.text((240, 340), "ALERT: SLA #1 BREACH DETECTED", fill=rose, font=font_title)
-                draw.text((240, 420), "Observed Uptime: 98.20%  <  Contract Target: 99.00%", fill=rose, font=font_subtitle)
-                draw.text((240, 465), "Recorded Latency: 480ms  |  Liquidated Penalty Due: 0.50 ETH", fill=navy, font=font_body)
-
-                # Challenge window box
-                draw.rectangle([(200, 560), (1720, 880)], fill=(255, 251, 235), outline=amber, width=2)
-                draw.text((240, 600), "Dispute & Challenge Period: Active (60s Window)", fill=amber, font=font_title)
-                draw.text((240, 670), "• Fairness Rule: Funds are NOT immediately seized.", fill=navy, font=font_body)
-                draw.text((240, 715), "• The SaaS Provider has 60 seconds to contest false-positive telemetry (e.g. upstream ISP DDoS).", fill=navy, font=font_body)
-                draw.text((240, 760), "• If unchallenged or upheld by the Arbitrator, automated settlement proceeds.", fill=navy, font=font_body)
-
-            elif stype == "settlement":
-                draw_topbar(draw, "4. Autonomous Settlement & Customer Compensation")
-                draw.rectangle([(150, 130), (1770, 950)], fill=(255, 255, 255), outline=emerald, width=3)
-                draw.text((200, 170), "Settlement Execution: Payout Complete", fill=emerald, font=font_title)
-
-                # Results grid
-                draw.rectangle([(200, 250), (900, 500)], fill=(240, 253, 244), outline=emerald, width=2)
-                draw.text((240, 290), "Provider Collateral Debited", fill=emerald, font=font_subtitle)
-                draw.text((240, 360), "10.00 ETH  --->  9.50 ETH", fill=navy, font=font_title)
-                draw.text((240, 430), "Exact 0.50 ETH penalty deducted from vault escrow", fill=slate, font=font_body)
-
-                draw.rectangle([(980, 250), (1720, 500)], fill=(240, 253, 244), outline=emerald, width=2)
-                draw.text((1020, 290), "Customer Indemnification", fill=emerald, font=font_subtitle)
-                draw.text((1020, 360), "+0.50 ETH Transferred", fill=emerald, font=font_title)
-                draw.text((1020, 430), "Transferred directly to FinBank wallet address", fill=slate, font=font_body)
-
-                # Trace
-                draw.rectangle([(200, 550), (1720, 890)], fill=(15, 23, 42))
-                code_trace = """[BLOCKCHAIN EVENT LOG]
-Timestamp:   14:14:10 UTC
-Event:       PenaltySettled(slaId: 1, customer: 0x94B210...FinBank, amount: 0.50 ETH)
-Tx Hash:     0x5e2b8109a1c8417e9234b01984210e82341a44a
-Gas Used:    38,150 gas
-Security:    Checks-Effects-Interactions Pattern Enforced (Reentrancy Immune)
-Outcome:     Zero manual dispute friction. 100% solvency assurance achieved."""
-                draw.text((240, 580), code_trace, fill=(56, 189, 248), font=font_mono)
-
-            elif stype == "conclusion":
-                draw.rectangle([(200, 150), (1720, 930)], fill=(255, 255, 255), outline=border_color, width=3)
-                draw.text((300, 230), "Conclusion & Evaluation Summary", fill=navy, font=font_title)
-                draw.text((300, 310), "CS2614 Fundamentals of Blockchain  |  Mini Project Evaluation", fill=blue, font=font_subtitle)
-
-                draw.line([(300, 380), (1620, 380)], fill=border_color, width=2)
-
-                draw.text((300, 430), "✓ Full Smart Contract Implementation in Solidity 0.8.20", fill=navy, font=font_subtitle)
-                draw.text((300, 490), "✓ Pre-funded Escrow Performance Bond guarantees solvency", fill=navy, font=font_subtitle)
-                draw.text((300, 550), "✓ Independent Telemetry with Basis-Point Precision (BP)", fill=navy, font=font_subtitle)
-                draw.text((300, 610), "✓ 60-Second Dispute Challenge Window ensures fair arbitration", fill=navy, font=font_subtitle)
-                draw.text((300, 670), "✓ Zero-touch automated liquidation reduces claim time from 60 days to seconds", fill=navy, font=font_subtitle)
-
-                draw.rectangle([(300, 750), (1620, 860)], fill=(241, 245, 249), outline=border_color, width=2)
-                draw.text((340, 785), "Presenter: Kukkadapu Sai Havish (USN: 1RUA24CSE0212)", fill=navy, font=font_subtitle)
-                draw.text((340, 825), "Thank you! Ready for Viva Voce & Q&A.", fill=emerald, font=font_body)
-
-            frame_file = os.path.join(frames_dir, f"frame_{frame_idx:05d}.png")
-            img.save(frame_file)
+            out_path = os.path.join(frames_dir, f"frame_{frame_idx:05d}.png")
+            img.save(out_path, optimize=False)
             frame_idx += 1
 
-    print(f"Generated {frame_idx} frames. Compiling MP4 video with ffmpeg...")
+            if frame_idx % 60 == 0:
+                print(f"  {frame_idx}/{total_frames} frames rendered...")
 
-    output_video = "sla_vault_demo.mp4"
+    print(f"All {frame_idx} frames rendered. Compiling with ffmpeg...")
+
+    output = "sla_vault_demo.mp4"
     cmd = [
         "ffmpeg", "-y",
-        "-framerate", str(fps),
+        "-framerate", str(FPS),
         "-i", os.path.join(frames_dir, "frame_%05d.png"),
         "-c:v", "libx264",
+        "-preset", "fast",
+        "-crf", "18",
         "-pix_fmt", "yuv420p",
-        "-crf", "20",
-        output_video
+        "-movflags", "+faststart",
+        output
     ]
     subprocess.run(cmd, check=True)
-    print(f"Video created successfully: {output_video}")
+    print(f"Video saved: {output}")
 
-    # Clean up frames
+    # Cleanup frames
     for f in os.listdir(frames_dir):
         os.remove(os.path.join(frames_dir, f))
     os.rmdir(frames_dir)
-    print("Temporary frames cleaned up.")
+    print("Temp frames cleaned up.")
 
 if __name__ == "__main__":
-    create_video()
+    generate_video()
