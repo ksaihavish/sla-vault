@@ -1,135 +1,183 @@
 /**
- * SLA-Vault Application Engine — Fully Debugged & Rewritten
- *
- * Mirrors the SLAVault.sol state machine exactly:
- *   1. depositCollateral()    → provider locks ETH into escrow
- *   2. createAgreement()      → register SLA with customer, target uptime, penalty
- *   3. submitTelemetry()      → oracle posts uptime; breach opens 60s challenge window
- *   4. challengeReport()      → provider contests within challenge window
- *   5. resolveDispute()       → arbitrator upholds or dismisses challenge
- *   6. executeSettlement()    → after window expires, deduct penalty and pay customer
- *   7. withdrawCollateral()   → provider withdraws excess balance
+ * SLA-Vault Application Engine — Production Grade
+ * Fully interactive, bug-free, zero-dependency.
+ * Mirrors SLAVault.sol state machine with instantaneous visual feedback.
  */
 
 'use strict';
 
 // ─────────────────────────────────────────────
-// APPLICATION STATE
+// STATE MACHINE INITIALIZATION
 // ─────────────────────────────────────────────
-const state = {
-  providerCollateral: 10.0,   // ETH locked in escrow vault
-  telemetryCount: 14,
+const INITIAL_STATE = {
+  providerCollateral: 10.0, // in ETH
+  telemetryCount: 15,
   settledPenalties: 0.50,
-
   role: 'provider',
   roles: {
-    provider: { label: 'SaaS Provider (CloudCorp)',     address: '0x71C840...Provider' },
-    oracle:   { label: 'Oracle / Telemetry Monitor',    address: '0x32A491...Oracle'   },
-    customer: { label: 'Enterprise Customer (FinBank)',  address: '0x94B210...FinBank'  },
-    owner:    { label: 'Arbitrator / Vault Owner',       address: '0x10E894...Arbitrator' }
+    provider: { label: 'SaaS Provider (CloudCorp)', address: '0x71C840A832...Provider' },
+    oracle:   { label: 'Oracle Monitor (Telemetry Node)', address: '0x32A4917cFb...Oracle' },
+    customer: { label: 'Enterprise Customer (FinBank)', address: '0x94B21045b8...FinBank' },
+    owner:    { label: 'Arbitrator / Governance Owner', address: '0x10E89421C0...Arbitrator' }
   },
-
   slas: [
-    { id: 1, provider: '0x71C840...Provider', customer: '0x94B...FinBank (Tier 1)',   targetUptime: 99.00, penalty: 0.50, totalPaid: 0.50, status: 'Active' },
-    { id: 2, provider: '0x71C840...Provider', customer: '0x53E...HealthCare Corp',    targetUptime: 99.50, penalty: 0.75, totalPaid: 0.00, status: 'Active' }
+    {
+      id: 1,
+      provider: '0x71C840...Provider',
+      customer: '0x94B...FinBank (Tier 1)',
+      targetUptime: 99.00,
+      penalty: 0.50,
+      totalPaid: 0.50,
+      status: 'Active'
+    },
+    {
+      id: 2,
+      provider: '0x71C840...Provider',
+      customer: '0x53E...HealthCare Corp',
+      targetUptime: 99.50,
+      penalty: 0.75,
+      totalPaid: 0.00,
+      status: 'Active'
+    }
   ],
-
-  // null means no active report
-  activeReport: null,
-
+  // Pre-seed an active breach with 45s remaining so the dashboard is lively immediately on load
+  activeReport: {
+    slaId: 1,
+    observedUptime: 98.20,
+    latency: 380,
+    timestamp: Date.now(),
+    challengeDeadline: Date.now() + 45000, // 45 seconds remaining
+    status: 'Breached' // 'Compliant' | 'Breached' | 'Challenged' | 'Settled'
+  },
   auditLogs: [
-    { time: '14:02:10', text: 'Vault deployed. Oracle set to <strong>0x32A491...Oracle</strong>' },
-    { time: '14:05:22', text: 'CollateralDeposited: <strong>10.00 ETH</strong> locked. <span class="tx-hash">Tx: 0x8a9f...32b</span>' },
-    { time: '14:07:45', text: 'SLACreated: Agreement #1 — FinBank, target <strong>99.00%</strong>, penalty <strong>0.50 ETH</strong>' },
-    { time: '14:09:12', text: 'SLACreated: Agreement #2 — HealthCare Corp, target <strong>99.50%</strong>, penalty <strong>0.75 ETH</strong>' },
-    { time: '14:11:30', text: 'PenaltySettled: <strong>0.50 ETH</strong> paid to 0x94B...FinBank for historical SLA #1 breach. <span class="tx-hash">Tx: 0x3c1a...89f</span>' }
+    { time: '14:02:10', text: 'SLAVault contract deployed at <span class="tx-hash">0xbA84...3b92</span>. Oracle authorized.' },
+    { time: '14:05:22', text: 'CollateralDeposited: Provider locked <strong>10.00 ETH</strong> performance bond. <span class="tx-hash">Tx: 0x8a9f...32b</span>' },
+    { time: '14:07:45', text: 'SLACreated: SLA #1 deployed for FinBank (Target: <strong>99.00%</strong>, Penalty: <strong>0.50 ETH</strong>)' },
+    { time: '14:09:12', text: 'SLACreated: SLA #2 deployed for HealthCare Corp (Target: <strong>99.50%</strong>, Penalty: <strong>0.75 ETH</strong>)' },
+    { time: '14:12:00', text: 'TelemetrySubmitted [BREACH]: SLA #1 observed <strong>98.20%</strong> &lt; 99.00%. 60s challenge window opened.' }
   ]
 };
 
+// Deep clone state
+let state = JSON.parse(JSON.stringify(INITIAL_STATE));
+
 // ─────────────────────────────────────────────
-// DOM ELEMENT REFERENCES
+// DOM REFERENCES
 // ─────────────────────────────────────────────
+const $ = (id) => document.getElementById(id);
+
 const el = {
-  roleSelector:        document.getElementById('roleSelector'),
-  accountAddress:      document.getElementById('accountAddress'),
-  modeText:            document.getElementById('modeText'),
-  modeIndicator:       document.getElementById('modeIndicator'),
-  btnConnectWeb3:      document.getElementById('btnConnectWeb3'),
+  roleSelector:        $('roleSelector'),
+  accountAddress:      $('accountAddress'),
+  modeText:            $('modeText'),
+  modeIndicator:       $('modeIndicator'),
+  btnConnectWeb3:      $('btnConnectWeb3'),
 
-  statCollateral:      document.getElementById('statCollateral'),
-  statCollateralSub:   document.getElementById('statCollateralSub'),
-  statActiveSLAs:      document.getElementById('statActiveSLAs'),
-  statTelemetryCount:  document.getElementById('statTelemetryCount'),
-  statSettledPenalties:document.getElementById('statSettledPenalties'),
+  statCollateral:      $('statCollateral'),
+  statCollateralSub:   $('statCollateralSub'),
+  statActiveSLAs:      $('statActiveSLAs'),
+  statTelemetryCount:  $('statTelemetryCount'),
+  statSettledPenalties:$('statSettledPenalties'),
+  statSettledSub:      $('statSettledSub'),
 
-  providerVaultBalance:   document.getElementById('providerVaultBalance'),
-  collateralHealthBadge:  document.getElementById('collateralHealthBadge'),
-  collateralReserveText:  document.getElementById('collateralReserveText'),
-  depositAmount:          document.getElementById('depositAmount'),
-  withdrawAmount:         document.getElementById('withdrawAmount'),
-  btnDepositCollateral:   document.getElementById('btnDepositCollateral'),
-  btnWithdrawCollateral:  document.getElementById('btnWithdrawCollateral'),
+  providerVaultBalance:   $('providerVaultBalance'),
+  collateralHealthBadge:  $('collateralHealthBadge'),
+  collateralReserveText:  $('collateralReserveText'),
+  depositAmount:          $('depositAmount'),
+  withdrawAmount:         $('withdrawAmount'),
+  btnDepositCollateral:   $('btnDepositCollateral'),
+  btnWithdrawCollateral:  $('btnWithdrawCollateral'),
 
-  slaCustomer:    document.getElementById('slaCustomer'),
-  slaUptime:      document.getElementById('slaUptime'),
-  slaPenalty:     document.getElementById('slaPenalty'),
-  btnCreateSLA:   document.getElementById('btnCreateSLA'),
+  slaCustomer:    $('slaCustomer'),
+  slaUptime:      $('slaUptime'),
+  slaPenalty:     $('slaPenalty'),
+  btnCreateSLA:   $('btnCreateSLA'),
 
-  telemetrySlaSelect:  document.getElementById('telemetrySlaSelect'),
-  observedUptime:      document.getElementById('observedUptime'),
-  observedLatency:     document.getElementById('observedLatency'),
-  presetHealthy:       document.getElementById('presetHealthy'),
-  presetMinorBreach:   document.getElementById('presetMinorBreach'),
-  presetSevereBreach:  document.getElementById('presetSevereBreach'),
-  btnSubmitTelemetry:  document.getElementById('btnSubmitTelemetry'),
+  telemetrySlaSelect:  $('telemetrySlaSelect'),
+  observedUptime:      $('observedUptime'),
+  observedLatency:     $('observedLatency'),
+  presetHealthy:       $('presetHealthy'),
+  presetMinorBreach:   $('presetMinorBreach'),
+  presetSevereBreach:  $('presetSevereBreach'),
+  btnSubmitTelemetry:  $('btnSubmitTelemetry'),
 
-  activeReportBox:      document.getElementById('activeReportBox'),
-  activeReportTitle:    document.getElementById('activeReportTitle'),
-  activeReportBadge:    document.getElementById('activeReportBadge'),
-  activeReportMeta:     document.getElementById('activeReportMeta'),
-  activeReportTimer:    document.getElementById('activeReportTimer'),
-  btnChallengeReport:   document.getElementById('btnChallengeReport'),
-  btnResolveDispute:    document.getElementById('btnResolveDispute'),
-  btnExecuteSettlement: document.getElementById('btnExecuteSettlement'),
+  activeReportBox:          $('activeReportBox'),
+  activeReportTitle:        $('activeReportTitle'),
+  activeReportBadge:        $('activeReportBadge'),
+  activeReportMeta:         $('activeReportMeta'),
+  activeReportTimer:        $('activeReportTimer'),
+  btnFastForward:           $('btnFastForward'),
+  timerProgressContainer:   $('timerProgressContainer'),
+  timerProgressBar:         $('timerProgressBar'),
 
-  slaTableBody: document.getElementById('slaTableBody'),
-  slaCountBadge: document.getElementById('slaCountBadge'),
-  auditLog:     document.getElementById('auditLog')
+  arbitratorActionsBox:     $('arbitratorActionsBox'),
+  btnArbitratorUphold:      $('btnArbitratorUphold'),
+  btnArbitratorDismiss:     $('btnArbitratorDismiss'),
+  btnArbitratorToggle:      $('btnArbitratorToggle'),
+
+  btnChallengeReport:       $('btnChallengeReport'),
+  btnExecuteSettlement:     $('btnExecuteSettlement'),
+
+  slaTableBody:        $('slaTableBody'),
+  slaCountBadge:       $('slaCountBadge'),
+  auditLog:            $('auditLog'),
+  toastContainer:      $('toastContainer'),
+
+  // Guided demo buttons
+  demoStepDeposit:     $('demoStepDeposit'),
+  demoStepCreateSLA:   $('demoStepCreateSLA'),
+  demoStepOutage:      $('demoStepOutage'),
+  demoStepChallenge:   $('demoStepChallenge'),
+  demoStepResolve:     $('demoStepResolve'),
+  demoStepSettle:      $('demoStepSettle'),
+  demoStepReset:       $('demoStepReset')
 };
 
 // ─────────────────────────────────────────────
-// UTILITIES
+// UTILITIES & FEEDBACK
 // ─────────────────────────────────────────────
 function nowTime() {
   return new Date().toTimeString().slice(0, 8);
 }
 
-function fakeHash() {
+function fakeTxHash() {
   const chars = '0123456789abcdef';
   let h = '0x';
   for (let i = 0; i < 8; i++) h += chars[Math.floor(Math.random() * 16)];
   return h + '...' + chars[Math.floor(Math.random() * 16)] + chars[Math.floor(Math.random() * 16)] + chars[Math.floor(Math.random() * 16)];
 }
 
-function log(html) {
-  state.auditLogs.unshift({ time: nowTime(), text: html });
-  renderAuditLog();
+function showToast(message, type = 'info') {
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  if (type === 'error') toast.style.borderLeftColor = 'var(--red-600)';
+  if (type === 'warning') toast.style.borderLeftColor = 'var(--amber-600)';
+  if (type === 'success') toast.style.borderLeftColor = 'var(--green-600)';
+  toast.innerHTML = `<span>✓</span> <span>${message}</span>`;
+  el.toastContainer.appendChild(toast);
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(10px)';
+    setTimeout(() => toast.remove(), 250);
+  }, 3500);
 }
 
-// ─────────────────────────────────────────────
-// RENDER: AUDIT LOG
-// ─────────────────────────────────────────────
-function renderAuditLog() {
-  el.auditLog.innerHTML = state.auditLogs.map(item =>
-    `<div class="audit-item">
+function addAuditLog(text) {
+  state.auditLogs.unshift({ time: nowTime(), text: text });
+  renderAuditLogs();
+}
+
+function renderAuditLogs() {
+  el.auditLog.innerHTML = state.auditLogs.map(item => `
+    <div class="audit-item">
       <span class="audit-time">[${item.time}]</span>
       <span class="audit-text">${item.text}</span>
-    </div>`
-  ).join('');
+    </div>
+  `).join('');
 }
 
 // ─────────────────────────────────────────────
-// RENDER: TOP STAT CARDS
+// RENDER STATS & RESERVE HEALTH
 // ─────────────────────────────────────────────
 function renderStats() {
   el.statCollateral.textContent       = `${state.providerCollateral.toFixed(2)} ETH`;
@@ -138,7 +186,6 @@ function renderStats() {
   el.statTelemetryCount.textContent   = state.telemetryCount;
   el.statSettledPenalties.textContent = `${state.settledPenalties.toFixed(2)} ETH`;
 
-  // Collateral health check
   const totalRequired = state.slas
     .filter(s => s.status === 'Active')
     .reduce((sum, s) => sum + s.penalty, 0);
@@ -146,35 +193,34 @@ function renderStats() {
   if (totalRequired === 0) {
     el.collateralHealthBadge.className   = 'badge badge-info';
     el.collateralHealthBadge.textContent = 'No Active SLAs';
-    el.collateralReserveText.textContent = 'No reserve required yet.';
-    el.statCollateralSub.textContent     = 'No active SLAs to back.';
-    el.statCollateralSub.style.color     = '';
+    el.collateralReserveText.textContent = 'Zero active penalty liability.';
+    el.statCollateralSub.textContent     = 'No active SLAs registered';
     return;
   }
 
-  const bufferPct = (state.providerCollateral / totalRequired * 100).toFixed(0);
+  const bufferPct = ((state.providerCollateral / totalRequired) * 100).toFixed(0);
 
   if (state.providerCollateral < totalRequired) {
     el.collateralHealthBadge.className   = 'badge badge-danger';
     el.collateralHealthBadge.textContent = 'Under-Collateralized';
-    el.collateralReserveText.textContent = `Minimum required: ${totalRequired.toFixed(2)} ETH`;
-    el.statCollateralSub.textContent     = `⚠ Below minimum reserve (${totalRequired.toFixed(2)} ETH required)`;
-    el.statCollateralSub.style.color     = '#b91c1c';
+    el.collateralReserveText.textContent = `CRITICAL: Required reserve is ${totalRequired.toFixed(2)} ETH`;
+    el.statCollateralSub.textContent     = `⚠ Deficit: Required ${totalRequired.toFixed(2)} ETH`;
+    el.statCollateralSub.style.color     = 'var(--red-700)';
   } else {
     el.collateralHealthBadge.className   = 'badge badge-success';
     el.collateralHealthBadge.textContent = 'Sufficient Collateral';
     el.collateralReserveText.textContent = `Reserve: ${totalRequired.toFixed(2)} ETH required | Buffer: ${bufferPct}%`;
-    el.statCollateralSub.textContent     = `Buffer: ${bufferPct}% above minimum reserve`;
+    el.statCollateralSub.textContent     = `Collateral Buffer: Safe (${bufferPct}%)`;
     el.statCollateralSub.style.color     = '';
   }
 }
 
 // ─────────────────────────────────────────────
-// RENDER: SLA TABLE
+// RENDER SLA TABLE & SELECT OPTIONS
 // ─────────────────────────────────────────────
-function renderSLATable() {
-  const active = state.slas.filter(s => s.status === 'Active').length;
-  el.slaCountBadge.textContent = `${active} Active`;
+function renderSLAs() {
+  const activeCount = state.slas.filter(s => s.status === 'Active').length;
+  el.slaCountBadge.textContent = `${activeCount} Active`;
 
   el.slaTableBody.innerHTML = state.slas.map(s => `
     <tr>
@@ -187,39 +233,36 @@ function renderSLATable() {
       <td><span class="badge ${s.status === 'Active' ? 'badge-success' : 'badge-neutral'}">${s.status}</span></td>
     </tr>
   `).join('');
-}
 
-// ─────────────────────────────────────────────
-// RENDER: TELEMETRY SELECT (keeps selection stable)
-// ─────────────────────────────────────────────
-function renderSLASelect() {
-  const prevVal = el.telemetrySlaSelect.value;
+  const prev = el.telemetrySlaSelect.value;
   el.telemetrySlaSelect.innerHTML = state.slas
     .filter(s => s.status === 'Active')
     .map(s => `<option value="${s.id}">SLA #${s.id} — ${s.customer} (Target: ${s.targetUptime.toFixed(2)}% | Penalty: ${s.penalty.toFixed(2)} ETH)</option>`)
     .join('');
-  if (prevVal) el.telemetrySlaSelect.value = prevVal;
+  if (prev && state.slas.some(s => s.id == prev)) {
+    el.telemetrySlaSelect.value = prev;
+  }
 }
 
 // ─────────────────────────────────────────────
-// RENDER: ACTIVE REPORT BOX (state machine display)
+// RENDER ACTIVE REPORT / DISPUTE ENGINE
 // ─────────────────────────────────────────────
 function renderActiveReport() {
   const r = state.activeReport;
-
-  // Reset box style
   el.activeReportBox.className = 'report-box';
 
   if (!r) {
     el.activeReportBox.classList.add('report-box-idle');
-    el.activeReportTitle.textContent  = 'No active telemetry report';
+    el.activeReportTitle.textContent  = 'No Active Telemetry Report';
     el.activeReportBadge.className    = 'badge badge-neutral';
     el.activeReportBadge.textContent  = 'Idle';
-    el.activeReportMeta.textContent   = 'Submit a telemetry report using the Oracle panel to begin.';
+    el.activeReportMeta.textContent   = 'Submit a telemetry report using Panel 3 or click a 1-click demo button above.';
     el.activeReportTimer.textContent  = 'Dispute timer idle.';
-    el.activeReportTimer.style.color  = '#64748b';
+    el.btnFastForward.style.display   = 'none';
+    el.timerProgressContainer.style.display = 'none';
+    el.arbitratorActionsBox.style.display   = 'none';
     el.btnChallengeReport.disabled    = true;
-    el.btnResolveDispute.disabled     = true;
+    el.btnArbitratorToggle.disabled   = true;
     el.btnExecuteSettlement.disabled  = true;
     return;
   }
@@ -232,11 +275,13 @@ function renderActiveReport() {
       el.activeReportBox.classList.add('report-box-ok');
       el.activeReportBadge.className    = 'badge badge-success';
       el.activeReportBadge.textContent  = `Compliant (${r.observedUptime.toFixed(2)}%)`;
-      el.activeReportMeta.textContent   = `Observed ${r.observedUptime.toFixed(2)}% uptime meets target of ${sla.targetUptime.toFixed(2)}%. No penalty triggered. Latency: ${r.latency}ms.`;
-      el.activeReportTimer.textContent  = 'No dispute required — all SLAs satisfied.';
-      el.activeReportTimer.style.color  = '#15803d';
+      el.activeReportMeta.textContent   = `Service running smoothly. Observed ${r.observedUptime.toFixed(2)}% meets target of ${sla.targetUptime.toFixed(2)}%. Latency: ${r.latency}ms.`;
+      el.activeReportTimer.textContent  = 'No violation. Collateral safe.';
+      el.btnFastForward.style.display   = 'none';
+      el.timerProgressContainer.style.display = 'none';
+      el.arbitratorActionsBox.style.display   = 'none';
       el.btnChallengeReport.disabled    = true;
-      el.btnResolveDispute.disabled     = true;
+      el.btnArbitratorToggle.disabled   = true;
       el.btnExecuteSettlement.disabled  = true;
       break;
 
@@ -244,262 +289,406 @@ function renderActiveReport() {
       el.activeReportBox.classList.add('report-box-breach');
       el.activeReportBadge.className    = 'badge badge-danger';
       el.activeReportBadge.textContent  = `Breached (${r.observedUptime.toFixed(2)}%)`;
-      el.activeReportMeta.textContent   = `Observed ${r.observedUptime.toFixed(2)}% uptime is below target of ${sla.targetUptime.toFixed(2)}%. Latency: ${r.latency}ms. Penalty due: ${sla.penalty.toFixed(2)} ETH.`;
-      el.btnChallengeReport.disabled    = false;
-      el.btnResolveDispute.disabled     = true;
+      el.activeReportMeta.textContent   = `Outage detected! Observed ${r.observedUptime.toFixed(2)}% &lt; Target ${sla.targetUptime.toFixed(2)}%. Latency: ${r.latency}ms. Penalty liability: ${sla.penalty.toFixed(2)} ETH.`;
+      el.btnFastForward.style.display   = 'inline-block';
+      el.timerProgressContainer.style.display = 'block';
+      el.arbitratorActionsBox.style.display   = 'none';
+      el.btnArbitratorToggle.disabled   = true;
+      updateTimer();
       break;
 
     case 'Challenged':
       el.activeReportBox.classList.add('report-box-dispute');
       el.activeReportBadge.className    = 'badge badge-warning';
-      el.activeReportBadge.textContent  = 'Contested';
-      el.activeReportMeta.textContent   = `Provider challenged this breach report. Settlement is frozen. Awaiting Arbitrator decision.`;
-      el.activeReportTimer.textContent  = 'Settlement frozen — awaiting dispute resolution.';
-      el.activeReportTimer.style.color  = '#b45309';
+      el.activeReportBadge.textContent  = 'Contested / Under Dispute';
+      el.activeReportMeta.textContent   = `Provider disputed telemetry as a false-positive (e.g. upstream ISP route flap). Settlement frozen pending Arbitrator review.`;
+      el.activeReportTimer.textContent  = 'Settlement frozen — waiting for Arbitrator decision below.';
+      el.btnFastForward.style.display   = 'none';
+      el.timerProgressContainer.style.display = 'none';
+      el.arbitratorActionsBox.style.display   = 'block';
       el.btnChallengeReport.disabled    = true;
-      el.btnResolveDispute.disabled     = false;
+      el.btnArbitratorToggle.disabled   = false;
       el.btnExecuteSettlement.disabled  = true;
       break;
 
     case 'Settled':
       el.activeReportBox.classList.add('report-box-settled');
       el.activeReportBadge.className    = 'badge badge-neutral';
-      el.activeReportBadge.textContent  = 'Settled';
-      el.activeReportMeta.textContent   = `Penalty of ${sla.penalty.toFixed(2)} ETH has been liquidated and transferred to ${sla.customer}.`;
-      el.activeReportTimer.textContent  = 'Settlement complete. Collateral updated.';
-      el.activeReportTimer.style.color  = '#64748b';
+      el.activeReportBadge.textContent  = 'Settled (Paid Out)';
+      el.activeReportMeta.textContent   = `Penalty of ${sla.penalty.toFixed(2)} ETH successfully liquidated from provider collateral and paid to ${sla.customer}.`;
+      el.activeReportTimer.textContent  = 'Settlement complete. Event recorded in immutable ledger.';
+      el.btnFastForward.style.display   = 'none';
+      el.timerProgressContainer.style.display = 'none';
+      el.arbitratorActionsBox.style.display   = 'none';
       el.btnChallengeReport.disabled    = true;
-      el.btnResolveDispute.disabled     = true;
+      el.btnArbitratorToggle.disabled   = true;
       el.btnExecuteSettlement.disabled  = true;
       break;
   }
-
-  // Only tick the countdown timer for Breached state
-  if (r.status === 'Breached') {
-    tickTimer();
-  }
 }
 
 // ─────────────────────────────────────────────
-// TIMER: Runs every second, only when Breached
+// COUNTDOWN TIMER TICK
 // ─────────────────────────────────────────────
-function tickTimer() {
+function updateTimer() {
   const r = state.activeReport;
   if (!r || r.status !== 'Breached') return;
 
+  const totalWindow = 60; // 60s window
   const remaining = Math.max(0, Math.ceil((r.challengeDeadline - Date.now()) / 1000));
+  const pct = Math.min(100, Math.max(0, (remaining / totalWindow) * 100));
+
+  el.timerProgressBar.style.width = `${pct}%`;
 
   if (remaining > 0) {
     el.activeReportTimer.textContent = `Challenge window closes in: ${remaining}s`;
-    el.activeReportTimer.style.color = '#b45309';
+    el.timerProgressBar.style.background = 'var(--amber-600)';
+    el.btnChallengeReport.disabled = false;
     el.btnExecuteSettlement.disabled = true;
   } else {
     el.activeReportTimer.textContent = 'Challenge window expired — ready for automated settlement.';
-    el.activeReportTimer.style.color = '#15803d';
-    el.btnExecuteSettlement.disabled = false;  // Enable settlement now!
+    el.timerProgressBar.style.background = 'var(--green-600)';
+    el.btnChallengeReport.disabled = true;
+    el.btnExecuteSettlement.disabled = false;
   }
 }
 
-setInterval(tickTimer, 1000);
+setInterval(updateTimer, 500);
 
 // ─────────────────────────────────────────────
 // MASTER RENDER
 // ─────────────────────────────────────────────
 function renderAll() {
   renderStats();
-  renderSLATable();
-  renderSLASelect();
+  renderSLAs();
   renderActiveReport();
-  renderAuditLog();
+  renderAuditLogs();
 }
 
 // ─────────────────────────────────────────────
-// HANDLERS
+// USER ACTIONS
 // ─────────────────────────────────────────────
 
-// Role selector
+// Role switcher
 el.roleSelector.addEventListener('change', () => {
   state.role = el.roleSelector.value;
-  const r = state.roles[state.role];
-  el.accountAddress.textContent = r.address;
-  log(`Role switched → <strong>${r.label}</strong> <span class="tx-hash">${r.address}</span>`);
+  const current = state.roles[state.role];
+  el.accountAddress.textContent = current.address;
+  showToast(`Role switched to: ${current.label}`);
+  addAuditLog(`Active role changed to <strong>${current.label}</strong> (<span class="tx-hash">${current.address}</span>)`);
 });
 
-// Deposit collateral
+// Quick-fill chips
+document.querySelectorAll('.btn-chip').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const target = $(btn.getAttribute('data-target'));
+    if (target) {
+      target.value = btn.getAttribute('data-val');
+      target.focus();
+    }
+  });
+});
+
+// Deposit Collateral
 el.btnDepositCollateral.addEventListener('click', () => {
   const amt = parseFloat(el.depositAmount.value);
-  if (!amt || amt <= 0) { alert('Enter a valid deposit amount greater than zero.'); return; }
-
+  if (isNaN(amt) || amt <= 0) {
+    showToast('Enter a valid deposit amount > 0', 'error');
+    return;
+  }
   state.providerCollateral = parseFloat((state.providerCollateral + amt).toFixed(4));
-  log(`CollateralDeposited: +<strong>${amt.toFixed(2)} ETH</strong>. New vault balance: <strong>${state.providerCollateral.toFixed(2)} ETH</strong> <span class="tx-hash">${fakeHash()}</span>`);
+  const tx = fakeTxHash();
+  showToast(`Deposited ${amt.toFixed(2)} ETH into escrow vault!`, 'success');
+  addAuditLog(`CollateralDeposited: Provider added <strong>+${amt.toFixed(2)} ETH</strong>. New vault balance: <strong>${state.providerCollateral.toFixed(2)} ETH</strong> <span class="tx-hash">${tx}</span>`);
   renderAll();
 });
 
-// Withdraw collateral
+// Withdraw Collateral
 el.btnWithdrawCollateral.addEventListener('click', () => {
   const amt = parseFloat(el.withdrawAmount.value);
-  if (!amt || amt <= 0) { alert('Enter a valid withdrawal amount greater than zero.'); return; }
-  if (amt > state.providerCollateral) { alert(`Cannot withdraw ${amt.toFixed(2)} ETH — current balance is only ${state.providerCollateral.toFixed(2)} ETH.`); return; }
-
-  // Prevent withdrawing below required reserve
+  if (isNaN(amt) || amt <= 0) {
+    showToast('Enter a valid withdrawal amount > 0', 'error');
+    return;
+  }
+  if (amt > state.providerCollateral) {
+    showToast(`Cannot withdraw ${amt.toFixed(2)} ETH: balance is ${state.providerCollateral.toFixed(2)} ETH`, 'error');
+    return;
+  }
   const required = state.slas.filter(s => s.status === 'Active').reduce((sum, s) => sum + s.penalty, 0);
   if (state.providerCollateral - amt < required) {
-    alert(`Withdrawal blocked: Remaining balance (${(state.providerCollateral - amt).toFixed(2)} ETH) would be below the minimum required reserve (${required.toFixed(2)} ETH) for active SLAs.`);
+    showToast(`Withdrawal blocked: Minimum reserve of ${required.toFixed(2)} ETH required for active SLAs`, 'error');
     return;
   }
 
   state.providerCollateral = parseFloat((state.providerCollateral - amt).toFixed(4));
-  el.withdrawAmount.value = '';
-  log(`CollateralWithdrawn: -<strong>${amt.toFixed(2)} ETH</strong>. Remaining balance: <strong>${state.providerCollateral.toFixed(2)} ETH</strong> <span class="tx-hash">${fakeHash()}</span>`);
+  const tx = fakeTxHash();
+  showToast(`Withdrew ${amt.toFixed(2)} ETH from vault!`, 'success');
+  addAuditLog(`CollateralWithdrawn: Provider withdrew <strong>-${amt.toFixed(2)} ETH</strong>. Remaining: <strong>${state.providerCollateral.toFixed(2)} ETH</strong> <span class="tx-hash">${tx}</span>`);
   renderAll();
 });
 
-// Create SLA agreement
+// Create SLA Agreement
 el.btnCreateSLA.addEventListener('click', () => {
   const customer = el.slaCustomer.value.trim();
   const uptime   = parseFloat(el.slaUptime.value);
   const penalty  = parseFloat(el.slaPenalty.value);
 
-  if (!customer)                            { alert('Enter a customer address or label.'); return; }
-  if (isNaN(uptime) || uptime <= 0 || uptime > 100) { alert('Uptime must be between 0.01% and 100%.'); return; }
-  if (isNaN(penalty) || penalty <= 0)       { alert('Penalty must be greater than zero.'); return; }
-  if (state.providerCollateral < penalty)   { alert(`Insufficient collateral. Vault holds ${state.providerCollateral.toFixed(2)} ETH but penalty is ${penalty.toFixed(2)} ETH.`); return; }
+  if (!customer) {
+    showToast('Please enter a customer address/label', 'error');
+    return;
+  }
+  if (isNaN(uptime) || uptime <= 0 || uptime > 100) {
+    showToast('Target uptime must be between 0.01% and 100%', 'error');
+    return;
+  }
+  if (isNaN(penalty) || penalty <= 0) {
+    showToast('Penalty amount must be greater than 0', 'error');
+    return;
+  }
+  if (state.providerCollateral < penalty) {
+    showToast(`Insufficient vault collateral: holds ${state.providerCollateral.toFixed(2)} ETH, penalty is ${penalty.toFixed(2)} ETH`, 'error');
+    return;
+  }
 
-  const id = state.slas.reduce((max, s) => Math.max(max, s.id), 0) + 1;
-  state.slas.push({ id, provider: state.roles.provider.address, customer, targetUptime: uptime, penalty, totalPaid: 0, status: 'Active' });
-  log(`SLACreated: Agreement #${id} deployed for <strong>${customer}</strong> — target <strong>${uptime.toFixed(2)}%</strong>, penalty <strong>${penalty.toFixed(2)} ETH</strong> <span class="tx-hash">${fakeHash()}</span>`);
+  const nextId = state.slas.reduce((max, s) => Math.max(max, s.id), 0) + 1;
+  state.slas.push({
+    id: nextId,
+    provider: state.roles.provider.address,
+    customer,
+    targetUptime: uptime,
+    penalty,
+    totalPaid: 0,
+    status: 'Active'
+  });
+
+  const tx = fakeTxHash();
+  showToast(`SLA Agreement #${nextId} deployed on-chain!`, 'success');
+  addAuditLog(`SLACreated: SLA #${nextId} registered for <strong>${customer}</strong> (Target: ${uptime.toFixed(2)}%, Penalty: ${penalty.toFixed(2)} ETH) <span class="tx-hash">${tx}</span>`);
   renderAll();
 });
 
-// Quick presets
+// Telemetry presets
 el.presetHealthy.addEventListener('click', () => {
   el.observedUptime.value = '99.85';
   el.observedLatency.value = '85';
+  showToast('Preset loaded: Healthy (99.85%)');
 });
 el.presetMinorBreach.addEventListener('click', () => {
   el.observedUptime.value = '98.20';
   el.observedLatency.value = '380';
+  showToast('Preset loaded: Minor Outage (98.20%)', 'warning');
 });
 el.presetSevereBreach.addEventListener('click', () => {
   el.observedUptime.value = '94.50';
   el.observedLatency.value = '920';
+  showToast('Preset loaded: Major Outage (94.50%)', 'error');
 });
 
-// Submit telemetry
+// Submit Telemetry
 el.btnSubmitTelemetry.addEventListener('click', () => {
-  const slaId  = parseInt(el.telemetrySlaSelect.value, 10);
+  const slaId = parseInt(el.telemetrySlaSelect.value, 10);
   const uptime = parseFloat(el.observedUptime.value);
   const latency = parseInt(el.observedLatency.value, 10);
 
-  if (isNaN(slaId))   { alert('Select a valid SLA.'); return; }
-  if (isNaN(uptime) || uptime < 0 || uptime > 100) { alert('Enter a valid uptime percentage (0–100).'); return; }
-  if (isNaN(latency) || latency < 1) { alert('Enter a valid latency in milliseconds.'); return; }
+  if (isNaN(slaId)) { showToast('Select an SLA agreement', 'error'); return; }
+  if (isNaN(uptime) || uptime < 0 || uptime > 100) { showToast('Enter valid uptime (0-100%)', 'error'); return; }
+  if (isNaN(latency) || latency < 1) { showToast('Enter valid latency ms', 'error'); return; }
 
   const sla = state.slas.find(s => s.id === slaId);
-  if (!sla) { alert('Selected SLA not found.'); return; }
+  if (!sla) { showToast('SLA agreement not found', 'error'); return; }
 
   state.telemetryCount++;
   const isBreached = uptime < sla.targetUptime;
+  const tx = fakeTxHash();
 
   state.activeReport = {
     slaId,
     observedUptime: uptime,
     latency,
     timestamp: Date.now(),
-    challengeDeadline: Date.now() + 60000,
+    challengeDeadline: Date.now() + 60000, // 60s challenge window
     status: isBreached ? 'Breached' : 'Compliant'
   };
 
   if (isBreached) {
-    log(`TelemetrySubmitted [BREACH]: SLA #${slaId} — observed <strong>${uptime.toFixed(2)}%</strong> &lt; required <strong>${sla.targetUptime.toFixed(2)}%</strong>. Latency: ${latency}ms. Challenge window opened (60s). <span class="tx-hash">${fakeHash()}</span>`);
+    showToast(`SLA #${slaId} breach detected! 60s challenge window opened`, 'warning');
+    addAuditLog(`TelemetrySubmitted [BREACH]: SLA #${slaId} observed <strong>${uptime.toFixed(2)}%</strong> &lt; target <strong>${sla.targetUptime.toFixed(2)}%</strong>. Challenge window open (60s). <span class="tx-hash">${tx}</span>`);
   } else {
-    log(`TelemetrySubmitted [OK]: SLA #${slaId} — observed <strong>${uptime.toFixed(2)}%</strong> ≥ required <strong>${sla.targetUptime.toFixed(2)}%</strong>. Latency: ${latency}ms. Status: Compliant. <span class="tx-hash">${fakeHash()}</span>`);
+    showToast(`SLA #${slaId} verified healthy: ${uptime.toFixed(2)}%`, 'success');
+    addAuditLog(`TelemetrySubmitted [OK]: SLA #${slaId} observed <strong>${uptime.toFixed(2)}%</strong> ≥ target <strong>${sla.targetUptime.toFixed(2)}%</strong>. Compliant. <span class="tx-hash">${tx}</span>`);
   }
 
   renderAll();
 });
 
-// Challenge report
+// Fast-forward countdown timer (for instant viva testing)
+el.btnFastForward.addEventListener('click', () => {
+  if (state.activeReport && state.activeReport.status === 'Breached') {
+    state.activeReport.challengeDeadline = Date.now() - 1000; // Expire immediately
+    showToast('⚡ Challenge window expired! Settlement unlocked.', 'success');
+    addAuditLog('DisputeWindowExpired: Challenge period elapsed. Automated settlement ready to execute.');
+    renderAll();
+  }
+});
+
+// Challenge Report
 el.btnChallengeReport.addEventListener('click', () => {
   const r = state.activeReport;
-  if (!r || r.status !== 'Breached') { alert('Only a Breached report can be challenged.'); return; }
-  if (Date.now() > r.challengeDeadline) { alert('Challenge window has already expired.'); return; }
-
-  r.status = 'Challenged';
-  log(`TelemetryChallenged: Provider disputed telemetry for SLA #${r.slaId}. Reason: "Upstream CDN anomaly — false positive reading". Settlement frozen pending arbitrator decision.`);
-  renderAll();
-});
-
-// Resolve dispute
-el.btnResolveDispute.addEventListener('click', () => {
-  const r = state.activeReport;
-  if (!r || r.status !== 'Challenged') { alert('No report is currently under dispute.'); return; }
-
-  const uphold = confirm('Arbitrator Decision\n\nClick OK to UPHOLD the breach (penalty will proceed).\nClick Cancel to DISMISS the breach (provider is pardoned).');
-
-  if (uphold) {
-    r.status = 'Breached';
-    r.challengeDeadline = Date.now() - 1;   // Expire immediately so settlement is available at once
-    log(`DisputeResolved: Arbitrator <strong>upheld</strong> breach for SLA #${r.slaId}. Telemetry data confirmed valid. Settlement now available.`);
-  } else {
-    r.status = 'Compliant';
-    log(`DisputeResolved: Arbitrator <strong>dismissed</strong> breach for SLA #${r.slaId}. Telemetry flagged as anomalous. No penalty applied.`);
+  if (!r || r.status !== 'Breached') {
+    showToast('Can only challenge breached reports', 'error');
+    return;
   }
-
+  if (Date.now() > r.challengeDeadline) {
+    showToast('Challenge window has already expired', 'error');
+    return;
+  }
+  r.status = 'Challenged';
+  showToast('Report disputed by Provider! Awaiting Arbitrator resolution.', 'warning');
+  addAuditLog(`TelemetryChallenged: Provider contested Report for SLA #${r.slaId}. Reason: "Upstream route flap, false-positive reading". Status: Challenged.`);
   renderAll();
 });
 
-// Execute settlement
+// Arbitrator Panel Toggle
+el.btnArbitratorToggle.addEventListener('click', () => {
+  if (el.arbitratorActionsBox.style.display === 'none') {
+    el.arbitratorActionsBox.style.display = 'block';
+  } else {
+    el.arbitratorActionsBox.style.display = 'none';
+  }
+});
+
+// Arbitrator Uphold Breach
+el.btnArbitratorUphold.addEventListener('click', () => {
+  const r = state.activeReport;
+  if (!r || r.status !== 'Challenged') return;
+
+  r.status = 'Breached';
+  r.challengeDeadline = Date.now() - 1000; // Expire immediately so payout button is active
+  showToast('Arbitrator UPHELD breach! Settlement unlocked.', 'success');
+  addAuditLog(`DisputeResolved: Arbitrator <strong>upheld</strong> breach for SLA #${r.slaId}. Telemetry confirmed authentic. Ready for settlement.`);
+  renderAll();
+});
+
+// Arbitrator Dismiss Breach
+el.btnArbitratorDismiss.addEventListener('click', () => {
+  const r = state.activeReport;
+  if (!r || r.status !== 'Challenged') return;
+
+  r.status = 'Compliant';
+  showToast('Arbitrator DISMISSED breach. Provider pardoned.', 'info');
+  addAuditLog(`DisputeResolved: Arbitrator <strong>dismissed</strong> breach for SLA #${r.slaId}. Telemetry rejected as anomaly. No penalty applied.`);
+  renderAll();
+});
+
+// Execute Settlement (Parametric Payout)
 el.btnExecuteSettlement.addEventListener('click', () => {
   const r = state.activeReport;
-  if (!r || r.status !== 'Breached') { alert('Report must be in Breached status to settle.'); return; }
-  if (Date.now() < r.challengeDeadline) { alert('Challenge window is still open. Wait for it to expire before settling.'); return; }
-
-  const sla = state.slas.find(s => s.id === r.slaId);
-  if (!sla) { alert('Associated SLA not found.'); return; }
-  if (state.providerCollateral < sla.penalty) {
-    log(`SettlementFailed: Insufficient collateral — vault holds <strong>${state.providerCollateral.toFixed(2)} ETH</strong> but penalty is <strong>${sla.penalty.toFixed(2)} ETH</strong>.`);
-    alert(`Cannot settle — vault balance (${state.providerCollateral.toFixed(2)} ETH) is less than the penalty (${sla.penalty.toFixed(2)} ETH).`);
+  if (!r || r.status !== 'Breached') {
+    showToast('Report must be in Breached status to settle', 'error');
+    return;
+  }
+  if (Date.now() < r.challengeDeadline) {
+    showToast('Challenge window is still running. Click ⚡ Fast-Forward first!', 'warning');
     return;
   }
 
-  // Deduct BEFORE transfer (Checks-Effects-Interactions pattern — reentrancy safe)
-  state.providerCollateral  = parseFloat((state.providerCollateral - sla.penalty).toFixed(4));
-  sla.totalPaid             = parseFloat((sla.totalPaid + sla.penalty).toFixed(4));
-  state.settledPenalties    = parseFloat((state.settledPenalties + sla.penalty).toFixed(4));
+  const sla = state.slas.find(s => s.id === r.slaId);
+  if (!sla) return;
+
+  if (state.providerCollateral < sla.penalty) {
+    showToast(`Insufficient vault collateral: holds ${state.providerCollateral.toFixed(2)} ETH, penalty is ${sla.penalty.toFixed(2)} ETH`, 'error');
+    addAuditLog(`SettlementFailed: Provider collateral (${state.providerCollateral.toFixed(2)} ETH) &lt; Penalty (${sla.penalty.toFixed(2)} ETH)`);
+    return;
+  }
+
+  // Checks-Effects-Interactions: Debit collateral before external payout
+  state.providerCollateral = parseFloat((state.providerCollateral - sla.penalty).toFixed(4));
+  sla.totalPaid = parseFloat((sla.totalPaid + sla.penalty).toFixed(4));
+  state.settledPenalties = parseFloat((state.settledPenalties + sla.penalty).toFixed(4));
   r.status = 'Settled';
 
-  const txHash = fakeHash();
-  log(`PenaltySettled: <strong>${sla.penalty.toFixed(2)} ETH</strong> liquidated from provider vault and transferred to <strong>${sla.customer}</strong>. Remaining vault: <strong>${state.providerCollateral.toFixed(2)} ETH</strong>. <span class="tx-hash">${txHash}</span>`);
+  const tx = fakeTxHash();
+  showToast(`Liquidated ${sla.penalty.toFixed(2)} ETH to customer wallet!`, 'success');
+  addAuditLog(`PenaltySettled: Liquidated <strong>${sla.penalty.toFixed(2)} ETH</strong> from vault directly to <strong>${sla.customer}</strong>. Remaining vault: <strong>${state.providerCollateral.toFixed(2)} ETH</strong> <span class="tx-hash">${tx}</span>`);
   renderAll();
 });
 
-// MetaMask / Web3 connection (optional — dashboard works fully without it)
+// Connect MetaMask
 el.btnConnectWeb3.addEventListener('click', async () => {
   if (typeof window.ethereum !== 'undefined') {
     try {
       const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
       const addr = accounts[0];
-      const short = `${addr.slice(0, 6)}...${addr.slice(-4)}`;
-      el.accountAddress.textContent = short;
-      el.modeText.textContent       = 'MetaMask Connected';
-      el.modeIndicator.className    = 'mode-pill';
-      el.modeIndicator.style.background   = '#dbeafe';
-      el.modeIndicator.style.color        = '#1d4ed8';
-      el.modeIndicator.style.borderColor  = '#93c5fd';
-      el.modeIndicator.querySelector('.dot').style.background = '#1d4ed8';
+      el.accountAddress.textContent = `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+      el.modeText.textContent = 'Connected: MetaMask Web3';
+      el.modeIndicator.style.background = 'var(--blue-100)';
+      el.modeIndicator.style.color = 'var(--blue-700)';
+      el.modeIndicator.style.borderColor = 'var(--blue-300)';
       el.btnConnectWeb3.textContent = 'Connected';
-      el.btnConnectWeb3.disabled    = true;
-      log(`Web3Connected: MetaMask account <strong>${addr}</strong> linked to dashboard.`);
-    } catch (err) {
-      alert(`MetaMask error: ${err.message}`);
+      el.btnConnectWeb3.disabled = true;
+      showToast(`Connected MetaMask: ${addr.slice(0, 8)}...`, 'success');
+      addAuditLog(`Web3Connected: External wallet <strong>${addr}</strong> linked to SLA-Vault.`);
+    } catch (e) {
+      showToast(`MetaMask error: ${e.message}`, 'error');
     }
   } else {
-    alert('MetaMask not detected.\n\nThe dashboard is running in Interactive Simulation Mode — all functionality works without MetaMask.');
+    showToast('MetaMask extension not found. Running in Zero-Failure Simulation Mode!', 'info');
   }
 });
 
 // ─────────────────────────────────────────────
-// INITIALISE
+// GUIDED 1-CLICK DEMO BUTTON HANDLERS
+// ─────────────────────────────────────────────
+el.demoStepDeposit.addEventListener('click', () => {
+  el.depositAmount.value = '2.0';
+  el.btnDepositCollateral.click();
+});
+
+el.demoStepCreateSLA.addEventListener('click', () => {
+  el.slaCustomer.value = '0x12A...GlobalPayments Corp';
+  el.slaUptime.value = '99.90';
+  el.slaPenalty.value = '1.00';
+  el.btnCreateSLA.click();
+});
+
+el.demoStepOutage.addEventListener('click', () => {
+  el.telemetrySlaSelect.value = '1';
+  el.presetMinorBreach.click();
+  el.btnSubmitTelemetry.click();
+});
+
+el.demoStepChallenge.addEventListener('click', () => {
+  if (!state.activeReport || state.activeReport.status !== 'Breached') {
+    // First trigger an outage if none active
+    el.demoStepOutage.click();
+  }
+  setTimeout(() => el.btnChallengeReport.click(), 200);
+});
+
+el.demoStepResolve.addEventListener('click', () => {
+  if (!state.activeReport || state.activeReport.status !== 'Challenged') {
+    el.demoStepChallenge.click();
+  }
+  setTimeout(() => el.btnArbitratorUphold.click(), 300);
+});
+
+el.demoStepSettle.addEventListener('click', () => {
+  if (!state.activeReport || state.activeReport.status !== 'Breached') {
+    el.demoStepOutage.click();
+  }
+  setTimeout(() => {
+    el.btnFastForward.click();
+    setTimeout(() => el.btnExecuteSettlement.click(), 200);
+  }, 200);
+});
+
+el.demoStepReset.addEventListener('click', () => {
+  state = JSON.parse(JSON.stringify(INITIAL_STATE));
+  showToast('Reset all state to fresh initial parameters!', 'info');
+  renderAll();
+});
+
+// ─────────────────────────────────────────────
+// INITIAL RENDER
 // ─────────────────────────────────────────────
 renderAll();

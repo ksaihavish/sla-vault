@@ -345,11 +345,11 @@ def make_settlement(draw):
 
     draw.text((600, 280), "10.00 ETH", fill=NAVY, font=FONT_BODY)
     draw.text((600, 316), "- 0.50 ETH", fill=RED_FG, font=FONT_H3)
-    draw.text([90, 350, 930, 352], fill=GREEN_BD)
+    draw.line([110, 345, 890, 345], fill=GREEN_BD, width=1)
     draw.text((600, 352), "9.50 ETH", fill=GREEN_FG, font=FONT_TITLE)
     draw.text((600, 402), "+ 0.50 ETH  →  0x94B...FinBank", fill=GREEN_FG, font=FONT_H3)
 
-    draw.line([90, 450, 930, 450], fill=GREEN_BD, width=1)
+    draw.line([110, 445, 890, 445], fill=GREEN_BD, width=1)
     draw.text((110, 466), "Security: Checks-Effects-Interactions pattern enforced.", fill=TEXT2, font=FONT_BODY)
     draw.text((110, 502), "  Balance debited BEFORE external transfer call.", fill=TEXT2, font=FONT_BODY)
     draw.text((110, 538), "  Reentrancy attack impossible.", fill=TEXT2, font=FONT_BODY)

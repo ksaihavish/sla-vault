@@ -3,16 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SLA-Vault | Blockchain Performance Bond & Settlement Platform</title>
+  <title>SLA-Vault | Blockchain Performance Bond &amp; Settlement Platform</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 
-  <!-- TOP NAVIGATION BAR -->
+  <!-- TOPBAR -->
   <header class="topbar">
     <div class="brand">
       <div class="brand-icon">SV</div>
-      <div>
+      <div class="brand-info">
         <span class="brand-name">SLA-Vault</span>
         <span class="brand-tag">FinTech Performance Bond Protocol</span>
       </div>
@@ -20,33 +20,51 @@
     <div class="topbar-right">
       <div class="mode-pill" id="modeIndicator">
         <span class="dot"></span>
-        <span id="modeText">Demo Engine: Live &amp; Active</span>
+        <span id="modeText">Simulation Engine: Active</span>
       </div>
-      <div style="display:flex;align-items:center;gap:6px;">
-        <label for="roleSelector" class="role-label">Role:</label>
+      <div class="role-wrapper">
+        <label for="roleSelector" class="role-label">Active Role:</label>
         <select id="roleSelector" class="form-select role-select">
           <option value="provider">SaaS Provider (CloudCorp)</option>
-          <option value="oracle">Oracle / Telemetry Monitor</option>
+          <option value="oracle">Oracle Monitor (Telemetry Node)</option>
           <option value="customer">Enterprise Customer (FinBank)</option>
-          <option value="owner">Arbitrator / Vault Owner</option>
+          <option value="owner">Arbitrator / Governance Owner</option>
         </select>
       </div>
-      <div class="account-badge" id="accountAddress">0x71C840...Provider</div>
-      <button class="btn btn-secondary btn-sm" id="btnConnectWeb3">Connect MetaMask</button>
+      <div class="account-badge" id="accountAddress" title="Active on-chain account address">0x71C840...Provider</div>
+      <button type="button" class="btn btn-secondary btn-sm" id="btnConnectWeb3">Connect MetaMask</button>
     </div>
   </header>
 
-  <!-- MAIN DASHBOARD -->
+  <!-- QUICK DEMO WALKTHROUGH CONTROLLER -->
+  <div class="demo-bar">
+    <div class="demo-bar-inner">
+      <div class="demo-bar-label">⚡ 1-Click Guided Demo:</div>
+      <div class="demo-bar-actions">
+        <button type="button" class="btn-demo" id="demoStepDeposit">1. Deposit Collateral</button>
+        <button type="button" class="btn-demo" id="demoStepCreateSLA">2. Create SLA</button>
+        <button type="button" class="btn-demo" id="demoStepOutage">3. Trigger Outage</button>
+        <button type="button" class="btn-demo" id="demoStepChallenge">4. Dispute Report</button>
+        <button type="button" class="btn-demo" id="demoStepResolve">5. Resolve Dispute</button>
+        <button type="button" class="btn-demo" id="demoStepSettle">6. Settle Payout</button>
+        <button type="button" class="btn-demo btn-demo-reset" id="demoStepReset">↺ Reset All</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATION CONTAINER -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- MAIN CONTAINER -->
   <main class="container">
 
-    <!-- NOTICE BANNER -->
+    <!-- PROTOCOL OVERVIEW NOTICE -->
     <div class="notice-box">
-      <div class="notice-title">SLA-Vault — Blockchain Protocol Overview</div>
+      <div class="notice-title">SLA-Vault Protocol Architecture (RVU CS2614 Mini Project)</div>
       <div class="notice-desc">
-        SaaS providers lock collateral in an on-chain escrow vault as a performance bond. 
-        An independent oracle submits signed uptime telemetry. When a verified breach occurs, 
-        the smart contract automatically deducts the penalty from the locked collateral and 
-        transfers it directly to the customer — no support tickets, no manual disputes.
+        SaaS providers lock cryptocurrency/stablecoins into an escrow vault (<span class="code-span">SLAVault.sol</span>).
+        Independent monitoring nodes submit cryptographically signed telemetry. If availability drops below guaranteed bounds,
+        a <strong>dispute-aware challenge window</strong> opens. Verified breaches trigger automated liquidation directly to the customer's wallet.
       </div>
     </div>
 
@@ -54,173 +72,204 @@
     <section class="stats-grid">
       <div class="stat-card">
         <div class="stat-title">Total Locked Collateral</div>
-        <div class="stat-value" id="statCollateral">—</div>
-        <div class="stat-sub" id="statCollateralSub">Calculating reserve...</div>
+        <div class="stat-value" id="statCollateral">10.00 ETH</div>
+        <div class="stat-sub" id="statCollateralSub">Collateral Buffer: Safe (800%)</div>
       </div>
       <div class="stat-card">
-        <div class="stat-title">Active SLAs</div>
-        <div class="stat-value" id="statActiveSLAs">—</div>
+        <div class="stat-title">Active SLAs Backed</div>
+        <div class="stat-value" id="statActiveSLAs">2</div>
         <div class="stat-sub">Enforced on-chain</div>
       </div>
       <div class="stat-card">
         <div class="stat-title">Telemetry Reports</div>
-        <div class="stat-value" id="statTelemetryCount">—</div>
-        <div class="stat-sub">Signed metric submissions</div>
+        <div class="stat-value" id="statTelemetryCount">15</div>
+        <div class="stat-sub">Verified signed submissions</div>
       </div>
       <div class="stat-card">
         <div class="stat-title">Settled Penalties</div>
-        <div class="stat-value" id="statSettledPenalties">—</div>
-        <div class="stat-sub">Automated zero-touch payouts</div>
+        <div class="stat-value" id="statSettledPenalties">0.50 ETH</div>
+        <div class="stat-sub" id="statSettledSub">Automated zero-touch payouts</div>
       </div>
     </section>
 
-    <!-- DASHBOARD PANELS GRID -->
+    <!-- DASHBOARD PANELS -->
     <div class="dashboard-grid">
 
       <!-- PANEL 1: PROVIDER VAULT -->
-      <section class="panel">
+      <section class="panel" id="panelVault">
         <div class="panel-header">
-          <div class="panel-title">Provider Performance Bond Vault</div>
-          <span class="panel-badge">Collateral Layer</span>
+          <div class="panel-title">1. Provider Performance Bond Vault</div>
+          <span class="panel-badge badge-role-provider">Provider Action</span>
         </div>
         <div class="panel-body">
           <p class="panel-desc">
-            The SaaS provider locks collateral into the vault before any SLA can be created.
-            This guarantees that customer indemnification funds are already escrowed on-chain.
+            The SaaS provider pre-funds the vault before offering services. This eliminates counterparty credit risk and guarantees immediate liquidation upon SLA breach.
           </p>
 
           <div class="vault-balance-box">
-            <div class="vault-balance-label">Current Escrow Balance</div>
-            <div class="vault-balance-value" id="providerVaultBalance">—</div>
+            <div class="vault-balance-label">Current Escrow Vault Balance</div>
+            <div class="vault-balance-value" id="providerVaultBalance">10.00 ETH</div>
             <div class="vault-balance-status">
               <span class="badge badge-success" id="collateralHealthBadge">Sufficient Collateral</span>
-              <span id="collateralReserveText" class="vault-reserve-text">Reserve check pending...</span>
+              <span id="collateralReserveText" class="vault-reserve-text">Reserve: 1.25 ETH required | Buffer: 800%</span>
             </div>
           </div>
 
           <div class="form-row">
             <div class="form-group">
-              <label class="form-label" for="depositAmount">Deposit (ETH)</label>
-              <input type="number" step="0.1" min="0.1" id="depositAmount" class="form-input" value="2.0">
+              <label class="form-label" for="depositAmount">Deposit Collateral (ETH)</label>
+              <div class="input-with-chips">
+                <input type="number" step="0.5" min="0.1" id="depositAmount" class="form-input" value="2.0">
+                <div class="chip-group">
+                  <button type="button" class="btn-chip" data-target="depositAmount" data-val="1.0">+1.0</button>
+                  <button type="button" class="btn-chip" data-target="depositAmount" data-val="5.0">+5.0</button>
+                </div>
+              </div>
             </div>
             <div class="form-group">
-              <label class="form-label" for="withdrawAmount">Withdraw (ETH)</label>
-              <input type="number" step="0.1" min="0.1" id="withdrawAmount" class="form-input" placeholder="e.g. 1.0">
+              <label class="form-label" for="withdrawAmount">Withdraw Excess (ETH)</label>
+              <div class="input-with-chips">
+                <input type="number" step="0.5" min="0.1" id="withdrawAmount" class="form-input" value="1.0">
+                <div class="chip-group">
+                  <button type="button" class="btn-chip" data-target="withdrawAmount" data-val="0.5">0.5</button>
+                  <button type="button" class="btn-chip" data-target="withdrawAmount" data-val="2.0">2.0</button>
+                </div>
+              </div>
             </div>
           </div>
+
           <div class="btn-row">
-            <button class="btn btn-primary" id="btnDepositCollateral">Deposit Collateral</button>
-            <button class="btn btn-secondary" id="btnWithdrawCollateral">Withdraw</button>
+            <button type="button" class="btn btn-primary" id="btnDepositCollateral">Deposit Collateral</button>
+            <button type="button" class="btn btn-secondary" id="btnWithdrawCollateral">Withdraw Excess</button>
           </div>
         </div>
       </section>
 
-      <!-- PANEL 2: SLA REGISTRATION -->
-      <section class="panel">
+      <!-- PANEL 2: SLA REGISTRY -->
+      <section class="panel" id="panelSLA">
         <div class="panel-header">
-          <div class="panel-title">Register New SLA Agreement</div>
-          <span class="panel-badge">Contract Layer</span>
+          <div class="panel-title">2. Register New SLA Agreement</div>
+          <span class="panel-badge badge-role-provider">Provider Action</span>
         </div>
         <div class="panel-body">
           <p class="panel-desc">
-            Define the customer address, minimum guaranteed uptime, and the penalty amount
-            that will be automatically settled per verified breach incident.
+            Codify guaranteed performance bounds on-chain. Uptime is stored in integer basis points (e.g., 9900 BP = 99.00%) to avoid EVM floating-point errors.
           </p>
 
           <div class="form-group">
-            <label class="form-label" for="slaCustomer">Customer Address / Label</label>
+            <label class="form-label" for="slaCustomer">Enterprise Customer Address / Label</label>
             <input type="text" id="slaCustomer" class="form-input" value="0x94B...FinBank (Enterprise Tier 1)">
           </div>
+
           <div class="form-row">
             <div class="form-group">
-              <label class="form-label" for="slaUptime">Min. Uptime (%)</label>
+              <label class="form-label" for="slaUptime">Guaranteed Uptime (%)</label>
               <input type="number" step="0.01" min="1" max="100" id="slaUptime" class="form-input" value="99.00">
               <div class="form-help">99.00% = 9900 Basis Points on-chain</div>
             </div>
             <div class="form-group">
-              <label class="form-label" for="slaPenalty">Penalty / Breach (ETH)</label>
+              <label class="form-label" for="slaPenalty">Penalty per Breach (ETH)</label>
               <input type="number" step="0.05" min="0.01" id="slaPenalty" class="form-input" value="0.50">
-              <div class="form-help">Auto-deducted from collateral</div>
+              <div class="form-help">Automatically liquidated from bond</div>
             </div>
           </div>
-          <button class="btn btn-primary btn-full" id="btnCreateSLA">Deploy SLA Agreement to Vault</button>
+
+          <button type="button" class="btn btn-primary btn-full" id="btnCreateSLA">Deploy SLA Agreement to Vault</button>
         </div>
       </section>
 
       <!-- PANEL 3: TELEMETRY ORACLE -->
-      <section class="panel">
+      <section class="panel" id="panelOracle">
         <div class="panel-header">
-          <div class="panel-title">Independent Telemetry &amp; Oracle Feed</div>
-          <span class="panel-badge">Oracle Layer</span>
+          <div class="panel-title">3. Independent Telemetry &amp; Oracle Feed</div>
+          <span class="panel-badge badge-role-oracle">Oracle Action</span>
         </div>
         <div class="panel-body">
           <p class="panel-desc">
-            The authorized oracle pings cloud endpoints, measures availability in basis points,
-            and submits a cryptographically signed report. A breach opens the challenge window.
+            Independent monitoring nodes continuously ping infrastructure. When uptime drops below the contractual threshold, submitting telemetry automatically flags a breach.
           </p>
 
           <div class="form-group">
             <label class="form-label" for="telemetrySlaSelect">Target SLA Agreement</label>
             <select id="telemetrySlaSelect" class="form-select"></select>
           </div>
+
           <div class="form-row">
             <div class="form-group">
               <label class="form-label" for="observedUptime">Observed Uptime (%)</label>
-              <input type="number" step="0.01" min="0" max="100" id="observedUptime" class="form-input" value="97.40">
+              <input type="number" step="0.01" min="0" max="100" id="observedUptime" class="form-input" value="98.20">
             </div>
             <div class="form-group">
-              <label class="form-label" for="observedLatency">Avg Latency (ms)</label>
-              <input type="number" min="1" id="observedLatency" class="form-input" value="480">
+              <label class="form-label" for="observedLatency">Observed Latency (ms)</label>
+              <input type="number" min="1" id="observedLatency" class="form-input" value="380">
             </div>
           </div>
 
           <div class="preset-section">
-            <div class="preset-label">Quick Demo Presets:</div>
+            <div class="preset-label">Quick Scenario Presets:</div>
             <div class="btn-preset-group">
-              <button type="button" class="btn-preset btn-preset-green" id="presetHealthy">&#10003; Healthy (99.85%)</button>
-              <button type="button" class="btn-preset btn-preset-amber" id="presetMinorBreach">&#9888; Minor Outage (98.20%)</button>
-              <button type="button" class="btn-preset btn-preset-red" id="presetSevereBreach">&#10005; Major Outage (94.50%)</button>
+              <button type="button" class="btn-preset btn-preset-green" id="presetHealthy">✓ Healthy (99.85%)</button>
+              <button type="button" class="btn-preset btn-preset-amber" id="presetMinorBreach">⚠ Minor Outage (98.20%)</button>
+              <button type="button" class="btn-preset btn-preset-red" id="presetSevereBreach">✕ Major Outage (94.50%)</button>
             </div>
           </div>
 
-          <button class="btn btn-primary btn-full" id="btnSubmitTelemetry">Submit Signed Telemetry Report</button>
+          <button type="button" class="btn btn-primary btn-full" id="btnSubmitTelemetry">Submit Signed Telemetry Report</button>
         </div>
       </section>
 
-      <!-- PANEL 4: DISPUTE & SETTLEMENT -->
-      <section class="panel">
+      <!-- PANEL 4: DISPUTE & SETTLEMENT ENGINE -->
+      <section class="panel" id="panelDispute">
         <div class="panel-header">
-          <div class="panel-title">Dispute Window &amp; Automated Settlement</div>
-          <span class="panel-badge">Arbitration Layer</span>
+          <div class="panel-title">4. Dispute Window &amp; Automated Settlement</div>
+          <span class="panel-badge badge-role-arbitrator">Dispute &amp; Settlement</span>
         </div>
         <div class="panel-body">
           <p class="panel-desc">
-            A 60-second challenge window opens on every breach. The provider may contest
-            erroneous telemetry. Once the window expires (or the arbitrator upholds),
-            the settlement executes automatically.
+            Fairness safeguard: Collateral is not seized immediately. A <strong>60-second dispute challenge window</strong> allows providers to contest false-positive telemetry before liquidation.
           </p>
 
-          <!-- Active Report Status Box -->
-          <div id="activeReportBox" class="report-box report-box-idle">
+          <!-- ACTIVE REPORT STATUS BOX -->
+          <div id="activeReportBox" class="report-box report-box-breach">
             <div class="report-box-header">
-              <span class="report-box-title" id="activeReportTitle">No active report</span>
-              <span class="badge badge-neutral" id="activeReportBadge">Idle</span>
+              <span class="report-box-title" id="activeReportTitle">Latest Report: SLA #1 — FinBank</span>
+              <span class="badge badge-danger" id="activeReportBadge">Breached (98.20%)</span>
             </div>
-            <div class="report-box-meta" id="activeReportMeta">Submit a telemetry report to begin.</div>
-            <div class="report-box-timer" id="activeReportTimer">Dispute timer idle.</div>
+            <div class="report-box-meta" id="activeReportMeta">
+              Observed 98.20% &lt; Target 99.00%. Latency: 380ms. Penalty due: 0.50 ETH.
+            </div>
+            <div class="timer-wrapper">
+              <div class="report-box-timer" id="activeReportTimer">Challenge window closes in: 45s</div>
+              <button type="button" class="btn-fastforward" id="btnFastForward" title="Fast-forward timer to test settlement immediately">⚡ Fast-Forward (Expire Now)</button>
+            </div>
+            <div class="progress-bar-container" id="timerProgressContainer">
+              <div class="progress-bar" id="timerProgressBar" style="width: 75%;"></div>
+            </div>
           </div>
 
-          <div class="btn-row" style="margin-bottom: 10px;">
-            <button type="button" class="btn btn-warning btn-sm" id="btnChallengeReport" disabled>Challenge Report</button>
-            <button type="button" class="btn btn-secondary btn-sm" id="btnResolveDispute" disabled>Resolve Dispute</button>
+          <!-- ARBITRATOR INLINE RESOLUTION CONTROLS (Visible only when Challenged) -->
+          <div id="arbitratorActionsBox" class="arbitrator-box" style="display: none;">
+            <div class="arbitrator-box-title">⚖ Arbitrator Decision Required:</div>
+            <div class="arbitrator-box-desc">Provider contested the breach as a false positive (e.g. upstream ISP routing failure). Review network logs:</div>
+            <div class="btn-row">
+              <button type="button" class="btn btn-danger btn-sm" id="btnArbitratorUphold">✓ Uphold Breach (Execute Penalty)</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btnArbitratorDismiss">✕ Dismiss Breach (Pardon Provider)</button>
+            </div>
           </div>
-          <button type="button" class="btn btn-danger btn-full" id="btnExecuteSettlement" disabled>
+
+          <!-- PRIMARY ACTION BUTTONS -->
+          <div class="btn-row" style="margin-bottom: 10px;">
+            <button type="button" class="btn btn-warning btn-sm" id="btnChallengeReport">Challenge Report (Provider)</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btnArbitratorToggle">Arbitrator Panel</button>
+          </div>
+
+          <button type="button" class="btn btn-danger btn-full" id="btnExecuteSettlement">
             Execute Liquidation &amp; Customer Payout
           </button>
         </div>
       </section>
 
-      <!-- PANEL 5: SLA REGISTRY TABLE (FULL WIDTH) -->
+      <!-- PANEL 5: ACTIVE SLA CONTRACTS TABLE -->
       <section class="panel full-width">
         <div class="panel-header">
           <div class="panel-title">Active Service Level Agreements — On-Chain Registry</div>
@@ -231,7 +280,7 @@
             <thead>
               <tr>
                 <th>SLA ID</th>
-                <th>Provider</th>
+                <th>Provider Address</th>
                 <th>Enterprise Customer</th>
                 <th>Target Uptime</th>
                 <th>Penalty / Incident</th>
@@ -240,13 +289,13 @@
               </tr>
             </thead>
             <tbody id="slaTableBody">
-              <!-- Populated by app.js -->
+              <!-- Dynamically populated -->
             </tbody>
           </table>
         </div>
       </section>
 
-      <!-- PANEL 6: AUDIT LOG (FULL WIDTH) -->
+      <!-- PANEL 6: IMMUTABLE AUDIT LOG -->
       <section class="panel full-width">
         <div class="panel-header">
           <div class="panel-title">Cryptographic Event Ledger &amp; Audit Trail</div>
@@ -254,7 +303,7 @@
         </div>
         <div class="panel-body" style="padding: 12px 20px;">
           <div class="audit-list" id="auditLog">
-            <!-- Populated by app.js -->
+            <!-- Dynamically populated -->
           </div>
         </div>
       </section>
