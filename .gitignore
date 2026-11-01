@@ -1,0 +1,8 @@
+# Personal certificates & temporary artifacts
+*.pdf
+cert_*.png
+video_frames/
+
+# System files
+.DS_Store
+Thumbs.db

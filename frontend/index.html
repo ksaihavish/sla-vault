@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SLA-Vault | Blockchain Performance Bond & Settlement Platform</title>
+  <link rel="stylesheet" href="styles.css">
+  <!-- Ethers.js for optional live Web3/MetaMask connection -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
+</head>
+<body>
+
+  <!-- TOP NAVIGATION BAR -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-icon">SV</div>
+      <div>
+        <span class="brand-name">SLA-Vault</span>
+        <span class="brand-tag">FinTech Performance Bond Protocol</span>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <div class="mode-pill" id="modeIndicator">
+        <span class="dot"></span>
+        <span id="modeText">Demo Engine: Live & Active</span>
+      </div>
+      <div>
+        <label for="roleSelector" style="font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-right: 4px;">Role:</label>
+        <select id="roleSelector" class="form-select" style="display: inline-block; width: auto; font-size: 12px; padding: 5px 8px;">
+          <option value="provider">SaaS Provider (CloudCorp)</option>
+          <option value="oracle">Oracle / Telemetry Monitor</option>
+          <option value="customer">Enterprise Customer (FinBank)</option>
+          <option value="owner">Arbitrator / Vault Owner</option>
+        </select>
+      </div>
+      <div class="account-badge" id="accountAddress">
+        0x71C...Provider
+      </div>
+      <button class="btn btn-secondary btn-sm" id="btnConnectWeb3" title="Connect external MetaMask wallet if desired">
+        Connect Web3
+      </button>
+    </div>
+  </header>
+
+  <!-- MAIN DASHBOARD -->
+  <main class="container">
+
+    <!-- NOTICE BANNER FOR DEMO / EVALUATION -->
+    <div class="notice-box">
+      <div class="notice-title">SLA-Vault Architecture Protocol Overview</div>
+      <div class="notice-desc">
+        This platform automates SLA enforcement by locking provider collateral into smart contracts. Independent telemetry reports automatically verify uptime. Upon breach, penalties are liquidated and paid directly to customer accounts without manual claim disputes.
+      </div>
+    </div>
+
+    <!-- STATS SUMMARY CARDS -->
+    <section class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-title">Total Locked Collateral</div>
+        <div class="stat-value" id="statCollateral">10.00 ETH</div>
+        <div class="stat-sub" id="statCollateralSub">Collateral Buffer: Safe (100%)</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-title">Active SLAs</div>
+        <div class="stat-value" id="statActiveSLAs">2</div>
+        <div class="stat-sub">Enforced on-chain</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-title">Telemetry Reports</div>
+        <div class="stat-value" id="statTelemetryCount">14</div>
+        <div class="stat-sub">Signed metric submissions</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-title">Settled Penalties</div>
+        <div class="stat-value" id="statSettledPenalties">0.50 ETH</div>
+        <div class="stat-sub">Automated zero-touch payouts</div>
+      </div>
+    </section>
+
+    <!-- TWO-COLUMN DASHBOARD GRID -->
+    <div class="dashboard-grid">
+
+      <!-- PANEL 1: PROVIDER PERFORMANCE BOND VAULT -->
+      <section class="panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <span>Provider Performance Bond Vault</span>
+          </div>
+          <span class="panel-badge">Collateral Layer</span>
+        </div>
+        <div class="panel-body">
+          <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
+            The SaaS provider locks collateral into the vault. This guarantees that funds are immediately available for automated customer indemnification in the event of an SLA breach.
+          </p>
+
+          <div style="background: #f8fafc; padding: 14px; border-radius: var(--radius-md); border: 1px solid var(--border-color); margin-bottom: 16px;">
+            <div style="font-size: 12px; color: var(--text-muted);">Current Provider Collateral Balance</div>
+            <div style="font-size: 22px; font-weight: 700; color: var(--navy-900); margin-top: 2px;" id="providerVaultBalance">
+              10.00 ETH
+            </div>
+            <div style="margin-top: 6px; font-size: 11px; display: flex; align-items: center; gap: 6px;">
+              <span class="badge badge-success" id="collateralHealthBadge">Sufficient Collateral</span>
+              <span style="color: var(--text-muted);">Minimum required reserve: 1.00 ETH</span>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="depositAmount">Deposit Collateral (ETH)</label>
+              <input type="number" step="0.1" id="depositAmount" class="form-input" placeholder="e.g. 2.0" value="2.0">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="withdrawAmount">Withdraw Excess (ETH)</label>
+              <input type="number" step="0.1" id="withdrawAmount" class="form-input" placeholder="e.g. 1.0">
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 10px;">
+            <button class="btn btn-primary" id="btnDepositCollateral" style="flex: 1;">Deposit Collateral</button>
+            <button class="btn btn-secondary" id="btnWithdrawCollateral" style="flex: 1;">Withdraw</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- PANEL 2: SLA AGREEMENT REGISTRATION -->
+      <section class="panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <span>Register New SLA Agreement</span>
+          </div>
+          <span class="panel-badge">Contract Layer</span>
+        </div>
+        <div class="panel-body">
+          <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
+            Define target service metrics, customer recipient address, and automated penalty rates per incident/hour of downtime.
+          </p>
+
+          <div class="form-group">
+            <label class="form-label" for="slaCustomer">Customer Address / Label</label>
+            <input type="text" id="slaCustomer" class="form-input" value="0x94B...FinBank (Enterprise Tier 1)">
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="slaUptime">Target Uptime (%)</label>
+              <input type="number" step="0.01" id="slaUptime" class="form-input" value="99.00">
+              <div class="form-help">99.00% = 9900 Basis Points</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="slaPenalty">Penalty per Breach (ETH)</label>
+              <input type="number" step="0.05" id="slaPenalty" class="form-input" value="0.50">
+              <div class="form-help">Auto-settled from collateral</div>
+            </div>
+          </div>
+
+          <button class="btn btn-primary btn-full" id="btnCreateSLA">
+            Deploy SLA Agreement to Vault
+          </button>
+        </div>
+      </section>
+
+      <!-- PANEL 3: TELEMETRY & ORACLE SIMULATION -->
+      <section class="panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <span>Independent Telemetry & Oracle Feed</span>
+          </div>
+          <span class="panel-badge">Oracle Layer</span>
+        </div>
+        <div class="panel-body">
+          <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px;">
+            Off-chain agents ping endpoints and submit cryptographically signed reports. If uptime falls below the target, a breach is logged and enters the challenge window.
+          </p>
+
+          <div class="form-group">
+            <label class="form-label" for="telemetrySlaSelect">Target SLA Agreement</label>
+            <select id="telemetrySlaSelect" class="form-select">
+              <option value="1">SLA #1 - FinBank (Target: 99.00% | Penalty: 0.50 ETH)</option>
+              <option value="2">SLA #2 - HealthCare Corp (Target: 99.50% | Penalty: 0.75 ETH)</option>
+            </select>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="observedUptime">Observed Uptime (%)</label>
+              <input type="number" step="0.01" id="observedUptime" class="form-input" value="97.40">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="observedLatency">Average Latency (ms)</label>
+              <input type="number" id="observedLatency" class="form-input" value="480">
+            </div>
+          </div>
+
+          <!-- QUICK PRESET BUTTONS FOR VIVA DEMO -->
+          <div style="margin-bottom: 16px;">
+            <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-bottom: 4px;">
+              Quick Evaluation Presets:
+            </div>
+            <div class="btn-preset-group">
+              <button class="btn-preset" id="presetHealthy">Healthy (99.85%)</button>
+              <button class="btn-preset" id="presetMinorBreach">Minor Outage (98.20%)</button>
+              <button class="btn-preset" id="presetSevereBreach">Major Outage (94.50%)</button>
+            </div>
+          </div>
+
+          <button class="btn btn-primary btn-full" id="btnSubmitTelemetry">
+            Submit Signed Telemetry Report
+          </button>
+        </div>
+      </section>
+
+      <!-- PANEL 4: DISPUTE & SETTLEMENT ENGINE -->
+      <section class="panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <span>Dispute Window & Automated Settlement</span>
+          </div>
+          <span class="panel-badge">Arbitration & Settlement</span>
+        </div>
+        <div class="panel-body">
+          <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px;">
+            When a breach is reported, a <strong>60-second dispute challenge window</strong> opens. The provider can challenge erroneous data. If unchallenged or upheld, penalty settlement executes automatically.
+          </p>
+
+          <div id="activeReportBox" style="background: #f8fafc; border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 14px; margin-bottom: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <span style="font-size: 13px; font-weight: 700; color: var(--navy-900);" id="activeReportTitle">
+                Latest Report: SLA #1
+              </span>
+              <span class="badge badge-danger" id="activeReportBadge">Breached (97.40%)</span>
+            </div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;" id="activeReportMeta">
+              Recorded Latency: 480ms | Target: 99.00% | Penalty Due: 0.50 ETH
+            </div>
+            <div style="font-size: 12px; font-weight: 600; color: var(--amber-600);" id="activeReportTimer">
+              Challenge Window Closes in: 45s
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 8px; margin-bottom: 10px;">
+            <button class="btn btn-warning btn-sm" id="btnChallengeReport" style="flex: 1;">
+              Challenge Report (Provider)
+            </button>
+            <button class="btn btn-secondary btn-sm" id="btnResolveDispute" style="flex: 1;">
+              Resolve Dispute (Arbitrator)
+            </button>
+          </div>
+
+          <button class="btn btn-danger btn-full" id="btnExecuteSettlement">
+            Execute Liquidation & Customer Payout
+          </button>
+        </div>
+      </section>
+
+      <!-- PANEL 5: ACTIVE SLA CONTRACTS TABLE (FULL WIDTH) -->
+      <section class="panel full-width">
+        <div class="panel-header">
+          <div class="panel-title">
+            <span>Active Service Level Agreements (On-Chain Registry)</span>
+          </div>
+          <span class="panel-badge">Active Records</span>
+        </div>
+        <div class="table-wrapper">
+          <table id="slaTable">
+            <thead>
+              <tr>
+                <th>SLA ID</th>
+                <th>Provider</th>
+                <th>Enterprise Customer</th>
+                <th>Target Uptime</th>
+                <th>Penalty / Incident</th>
+                <th>Total Paid Out</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="slaTableBody">
+              <!-- Populated dynamically via JS -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- PANEL 6: IMMUTABLE AUDIT TRAIL / TRANSACTION LOG -->
+      <section class="panel full-width">
+        <div class="panel-header">
+          <div class="panel-title">
+            <span>Cryptographic Event Ledger & Audit Trail</span>
+          </div>
+          <span class="panel-badge">Immutable Logs</span>
+        </div>
+        <div class="panel-body">
+          <div class="audit-list" id="auditLog">
+            <!-- Dynamic audit trail -->
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
